@@ -8,11 +8,8 @@ NSString *WAMJBPath(NSString *suffix) {
     dispatch_once(&once, ^{
         char buf[PATH_MAX];
         if (realpath("/var/jb", buf)) {
-            // Drop a redundant trailing "/var/jb" if realpath returned the same path
-            // (rootless: /var/jb -> /var/jb itself).
             root = [NSString stringWithUTF8String:buf];
         } else {
-            // /var/jb doesn't exist — rootful jailbreak, paths are at the system root.
             root = @"";
         }
     });
@@ -29,13 +26,11 @@ NSString *WAMJBPath(NSString *suffix) {
 }
 
 - (void)writePrefs:(NSDictionary *)prefs {
-    // Ensure directory exists
     NSString *dir = [kWAMPrefsPlistPath stringByDeletingLastPathComponent];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                               withIntermediateDirectories:YES
                                                attributes:nil
                                                     error:nil];
-    // Synchronous atomic write — data is on disk before notification fires
     [prefs writeToFile:kWAMPrefsPlistPath atomically:YES];
 }
 
@@ -47,6 +42,11 @@ NSString *WAMJBPath(NSString *suffix) {
         [prefs removeObjectForKey:key];
     }
     [self writePrefs:prefs];
+}
+
+- (void)wamReloadSpecifiersFromDisk {
+    _specifiers = nil;
+    [self reloadSpecifiers];
 }
 
 - (void)postNotification {
@@ -85,7 +85,7 @@ NSString *WAMJBPath(NSString *suffix) {
     NSString *key;
 
     if (lightKey && [globalKeys containsObject:lightKey]) {
-        key = lightKey; // always use base key, never append Dark
+        key = lightKey;
     } else if (lightKey) {
         key = [self keyForBase:lightKey];
     } else {
@@ -140,7 +140,7 @@ NSString *WAMJBPath(NSString *suffix) {
 #pragma mark - Color Picker
 
 - (void)showColorPickerForKey:(NSString *)baseKey defaultColor:(UIColor *)defaultColor {
-    _currentColorKey = [self keyForBase:baseKey];  // resolve dark/light key here
+    _currentColorKey = [self keyForBase:baseKey];
 
     UIColorPickerViewController *picker = [[UIColorPickerViewController alloc] init];
     picker.delegate = self;
@@ -153,7 +153,7 @@ NSString *WAMJBPath(NSString *suffix) {
 }
 
 - (void)showColorPickerForKeyDirect:(NSString *)key defaultColor:(UIColor *)defaultColor {
-    _currentColorKey = key; // use the key as-is, no dark/light resolution
+    _currentColorKey = key;
 
     UIColorPickerViewController *picker = [[UIColorPickerViewController alloc] init];
     picker.delegate = self;
@@ -171,7 +171,6 @@ NSString *WAMJBPath(NSString *suffix) {
     [self postNotification];
 }
 
-// Also save on every live change so the app updates as the user drags the picker
 - (void)colorPickerViewController:(UIColorPickerViewController *)viewController
           didSelectColor:(UIColor *)color
           continuously:(BOOL)continuously {

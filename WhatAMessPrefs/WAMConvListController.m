@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import "WAMConvListController.h"
 #import "WAMBaseListController.h"
+#import "WAMPresetModel.h"
+#import "WAMGradientBuilderController.h"
 
 @implementation WAMConvListController
 
@@ -18,12 +20,19 @@
 
 #pragma mark - Color Pickers
 
-- (void)pickBackgroundColor {
-    [self showColorPickerForKey:@"convListBackgroundColor" defaultColor:[UIColor blackColor]];
+- (void)createConvGradient {
+    BOOL dark = [self isEditingDarkMode];
+    WAMGradientBuilderController *b = [[WAMGradientBuilderController alloc] initWithStops:nil];
+    b.onDone = ^(NSArray<NSString *> *stops, WAMGradientDirection direction){
+        if (stops.count >= 2) [WAMPresetStore setGradientBackground:stops direction:direction chat:NO dark:dark];
+        [self dismissViewControllerAnimated:YES completion:nil];
+    };
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:b];
+    [self presentViewController:nav animated:YES completion:nil];
 }
 
-- (void)pickCellColor {
-    [self showColorPickerForKey:@"convListCellColor" defaultColor:[UIColor blackColor]];
+- (void)pickBackgroundColor {
+    [self showColorPickerForKey:@"convListBackgroundColor" defaultColor:[UIColor blackColor]];
 }
 
 - (void)pickTitleColor {

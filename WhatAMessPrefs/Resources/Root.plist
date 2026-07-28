@@ -39,6 +39,22 @@
 			<string>killApp</string>
 		</dict>
 		<dict>
+    		<key>cell</key>
+    		<string>PSGroupCell</string>
+    		<key>label</key>
+    		<string>Presets</string>
+    		<key>footerText</key>
+    		<string>Browse premade themes and apply them to your conversation list, chats, or both. Import and export from inside the gallery.</string>
+		</dict>
+		<dict>
+    		<key>cell</key>
+    		<string>PSButtonCell</string>
+    		<key>label</key>
+    		<string>Browse Presets</string>
+    		<key>action</key>
+    		<string>browsePresets</string>
+		</dict>
+		<dict>
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
@@ -159,30 +175,6 @@
 			<string>Dark Mode Cell Tint</string>
 			<key>action</key>
 			<string>pickCellTintColorDark</string>
-		</dict>
-		<dict>
-    		<key>cell</key>
-    		<string>PSGroupCell</string>
-    		<key>label</key>
-    		<string>Presets</string>
-    		<key>footerText</key>
-    		<string>Export your current setup as a .wampreset preset file, or import an existing one.</string>
-		</dict>
-		<dict>
-    		<key>cell</key>
-    		<string>PSButtonCell</string>
-    		<key>label</key>
-    		<string>Export Preset</string>
-    		<key>action</key>
-    		<string>exportPreset</string>
-		</dict>
-		<dict>
-    		<key>cell</key>
-    		<string>PSButtonCell</string>
-    		<key>label</key>
-    		<string>Import Preset</string>
-    		<key>action</key>
-    		<string>importPreset</string>
 		</dict>
 		<dict>
 			<key>cell</key>

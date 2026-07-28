@@ -6,8 +6,8 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = WhatAMess
 
-WhatAMess_FILES = Tweak.x
-WhatAMess_CFLAGS = -fobjc-arc 
+WhatAMess_FILES = Tweak.x WAMPresetModel.m WAMPresetPreviewView.m WAMPresetCardView.m WAMGradientBuilderController.m
+WhatAMess_CFLAGS = -fobjc-arc
 
 include $(THEOS_MAKE_PATH)/tweak.mk
 SUBPROJECTS += WhatAMessPrefs

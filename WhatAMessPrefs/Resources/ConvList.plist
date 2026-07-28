@@ -36,35 +36,17 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Color Background</string>
+			<string>Gradient Background</string>
 			<key>footerText</key>
-			<string>It's recommended to only use EITHER the color background or the image background. Having both toggled on at once may be visually unappealing.</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSSwitchCell</string>
-			<key>label</key>
-			<string>Enable Color Background</string>
-			<key>lightModeKey</key>
-			<string>isConvColorBgEnabled</string>
-			<key>default</key>
-			<false/>
+			<string>Create a color gradient to set as the conversation list background. Up to five colors.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
 			<string>PSButtonCell</string>
 			<key>label</key>
-			<string>Choose Pinned Background Color</string>
+			<string>Create Gradient Background</string>
 			<key>action</key>
-			<string>pickBackgroundColor</string>
-		</dict>
-		<dict>
-			<key>cell</key>
-			<string>PSButtonCell</string>
-			<key>label</key>
-			<string>Choose Cell Background Color</string>
-			<key>action</key>
-			<string>pickCellColor</string>
+			<string>createConvGradient</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -72,7 +54,7 @@
 			<key>label</key>
 			<string>Image Background</string>
 			<key>footerText</key>
-			<string>This slider controls the blur of the image.</string>
+			<string>Pick a photo instead. This slider controls the blur of the image.</string>
 		</dict>
 		<dict>
 			<key>cell</key>

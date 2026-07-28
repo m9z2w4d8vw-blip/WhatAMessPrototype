@@ -12,11 +12,16 @@ WhatAMessPrefs_FILES = WAMRootListController.m \
 					WAMMessageBarController.m \
 					WAMChatBubbleController.m \
 					WAMAdvancedTintController.m \
-					WAMBannerCell.m
+					WAMBannerCell.m \
+					WAMPresetGalleryController.m \
+					../WAMPresetModel.m \
+					../WAMPresetPreviewView.m \
+					../WAMPresetCardView.m \
+					../WAMGradientBuilderController.m
 
 WhatAMessPrefs_FRAMEWORKS = UIKit UniformTypeIdentifiers
 WhatAMessPrefs_PRIVATE_FRAMEWORKS = Preferences
 WhatAMessPrefs_INSTALL_PATH = /Library/PreferenceBundles
-WhatAMessPrefs_CFLAGS = -fobjc-arc
+WhatAMessPrefs_CFLAGS = -fobjc-arc -I..
 
 include $(THEOS_MAKE_PATH)/bundle.mk

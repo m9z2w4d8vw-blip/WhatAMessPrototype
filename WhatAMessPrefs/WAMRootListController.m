@@ -2,6 +2,8 @@
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "WAMRootListController.h"
 #import "WAMBaseListController.h"
+#import "WAMPresetGalleryController.h"
+#import "WAMPresetModel.h"
 #import <spawn.h>
 #import <sys/wait.h>
 
@@ -34,10 +36,15 @@
 
 #pragma mark - Actions
 
+- (void)browsePresets {
+    WAMPresetGalleryController *gallery = [WAMPresetGalleryController new];
+    [self.navigationController pushViewController:gallery animated:YES];
+}
+
 - (void)killApp {
     UIAlertController *alert = [UIAlertController
         alertControllerWithTitle:@"Kill Messages"
-        message:@"Are you sure you want to restart Messages? This will forcibly close the app!"
+        message:@"Are you sure you want to restart Messages?"
         preferredStyle:UIAlertControllerStyleAlert];
 
     [alert addAction:[UIAlertAction actionWithTitle:@"Not Yet"
@@ -46,9 +53,7 @@
     [alert addAction:[UIAlertAction actionWithTitle:@"Restart"
         style:UIAlertActionStyleDestructive
         handler:^(UIAlertAction *action) {
-            pid_t pid;
-            const char *args[] = {"killall", "MobileSMS", NULL};
-            posix_spawn(&pid, [WAMJBPath(@"/usr/bin/killall") UTF8String], NULL, NULL, (char *const *)args, NULL);
+            [WAMPresetStore restartMessages];
         }]];
 
     [self presentViewController:alert animated:YES completion:nil];
@@ -87,21 +92,16 @@
     return WEXITSTATUS(status) == 0;
 }
 
-// A key is device-local and must never be shared in a preset if it's app state, or
-// ANY per-contact data (keyed by contact names, references private images). Per-contact
-// keys are matched by prefix so any current/future "perContact*" key is covered.
-// Such keys are excluded from export (privacy) and preserved on import (so importing
-// someone else's preset never wipes your own per-contact customizations).
 - (BOOL)isPresetExcludedKey:(NSString *)key {
     if ([key isEqualToString:@"editingDarkMode"]) return YES;
     if ([key isEqualToString:@"isEnabled"]) return YES;
     if ([key isEqualToString:@"chatIdentifierAliases"]) return YES;
+    if ([key isEqualToString:@"userPresets"]) return YES;
     if ([key hasPrefix:@"perContact"]) return YES;
     return NO;
 }
 
 - (void)exportPreset {
-    // Read current prefs and strip excluded (device-local / private) keys
     NSMutableDictionary *prefs = [self readPrefs];
     NSMutableDictionary *presetPrefs = [NSMutableDictionary new];
     for (NSString *key in prefs) {
@@ -110,19 +110,14 @@
         }
     }
 
-    // Create a temp working directory
     NSString *tempDir = [NSTemporaryDirectory() stringByAppendingPathComponent:@"wampreset_export"];
     NSFileManager *fm = [NSFileManager defaultManager];
     [fm removeItemAtPath:tempDir error:nil];
     [fm createDirectoryAtPath:tempDir withIntermediateDirectories:YES attributes:nil error:nil];
 
-    // Write preset.plist
     NSString *plistPath = [tempDir stringByAppendingPathComponent:@"preset.plist"];
     [presetPrefs writeToFile:plistPath atomically:YES];
 
-    // Copy background images if they exist. Allowlisted on purpose — the per_contact/
-    // subdirectory (per-chat background images keyed by contact name) is deliberately
-    // NOT exported: it's both private data and only meaningful on the user's own device.
     NSDictionary *images = @{
         @"background.jpg":           WAMJBPath(@"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs/background.jpg"),
         @"background_dark.jpg":      WAMJBPath(@"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs/background_dark.jpg"),
@@ -139,7 +134,6 @@
         }
     }
 
-    // Zip it all up
     NSString *zipPath = [NSTemporaryDirectory() stringByAppendingPathComponent:@"WhatAMess_Preset.wampreset"];
     [fm removeItemAtPath:zipPath error:nil];
 
@@ -148,7 +142,7 @@
     if (!zipped) {
         UIAlertController *alert = [UIAlertController
             alertControllerWithTitle:@"Export Failed"
-            message:@"Could not create preset file. Please try again."
+            message:@"Could not create preset file! Please try again."
             preferredStyle:UIAlertControllerStyleAlert];
         [alert addAction:[UIAlertAction actionWithTitle:@"OK"
             style:UIAlertActionStyleDefault handler:nil]];
@@ -156,16 +150,13 @@
         return;
     }
 
-    // Clean up temp dir
     [fm removeItemAtPath:tempDir error:nil];
 
-    // Present share sheet
     NSURL *zipURL = [NSURL fileURLWithPath:zipPath];
     UIActivityViewController *activityVC = [[UIActivityViewController alloc]
         initWithActivityItems:@[zipURL]
         applicationActivities:nil];
 
-    // iPad support
     activityVC.popoverPresentationController.sourceView = self.view;
     activityVC.popoverPresentationController.sourceRect = CGRectMake(
         self.view.bounds.size.width / 2,
@@ -214,7 +205,7 @@
     };
     int spawnResult = posix_spawn(&pid, [WAMJBPath(@"/usr/bin/unzip") UTF8String], NULL, NULL, (char *const *)args, NULL);
     if (spawnResult != 0) {
-        [self showImportError:@"Could not launch unzip utility."];
+        [self showImportError:@"Could not launch unzip."];
         return;
     }
     int status;
@@ -226,33 +217,28 @@
 
     NSString *plistPath = [tempDir stringByAppendingPathComponent:@"preset.plist"];
     if (![fm fileExistsAtPath:plistPath]) {
-        [self showImportError:@"Invalid preset file — missing preset.plist."];
+        [self showImportError:@"Invalid preset file: missing preset.plist!"];
         return;
     }
 
     NSDictionary *importedPrefs = [NSDictionary dictionaryWithContentsOfFile:plistPath];
     if (!importedPrefs) {
-        [self showImportError:@"Could not read preset data."];
+        [self showImportError:@"Could not read preset data!"];
         return;
     }
 
-        // Preserve only non-preset keys, then apply imported prefs fresh
         NSMutableDictionary *currentPrefs = [self readPrefs];
         NSMutableDictionary *freshPrefs = [NSMutableDictionary new];
 
-        // Keep the device-local/private keys (same rule as export) so the user's own
-        // per-contact data and aliases survive importing someone else's preset.
         for (NSString *key in currentPrefs) {
             if ([self isPresetExcludedKey:key]) freshPrefs[key] = currentPrefs[key];
         }
 
-        // Apply imported preset on top of the clean slate
         for (NSString *key in importedPrefs) {
             freshPrefs[key] = importedPrefs[key];
         }
         [self writePrefs:freshPrefs];
 
-    // Copy background images if present
     NSDictionary *images = @{
         @"background.jpg":           WAMJBPath(@"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs/background.jpg"),
         @"background_dark.jpg":      WAMJBPath(@"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs/background_dark.jpg"),
@@ -285,9 +271,7 @@
     [alert addAction:[UIAlertAction actionWithTitle:@"Restart"
         style:UIAlertActionStyleDestructive
         handler:^(UIAlertAction *action) {
-            pid_t pid;
-            const char *args[] = {"killall", "MobileSMS", NULL};
-            posix_spawn(&pid, [WAMJBPath(@"/usr/bin/killall") UTF8String], NULL, NULL, (char *const *)args, NULL);
+            [WAMPresetStore restartMessages];
             }]];
     [self presentViewController:alert animated:YES completion:nil];
 }
@@ -295,7 +279,7 @@
 - (void)documentPicker:(UIDocumentPickerViewController *)controller
     didPickDocumentsAtURLs:(NSArray<NSURL *> *)urls {
     if (urls.count == 0) {
-        [self showImportError:@"No file selected."];
+        [self showImportError:@"No file selected!"];
         return;
     }
     [self applyPresetFromURL:urls.firstObject];
@@ -303,7 +287,7 @@
 
 - (void)showImportError:(NSString *)message {
     UIAlertController *alert = [UIAlertController
-        alertControllerWithTitle:@"Import Failed. Check your file and try again."
+        alertControllerWithTitle:@"Import Failed! Check your preset file and try again."
         message:message
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"OK"
@@ -316,7 +300,7 @@
 - (void)resetPreferences {
     UIAlertController *alert = [UIAlertController
         alertControllerWithTitle:@"Are you sure you want to reset preferences?"
-        message:@"This will erase all your settings. This cannot be undone!"
+        message:@"This will erase ALL your settings! Presets you've saved are kept. This CANNOT be undone!"
         preferredStyle:UIAlertControllerStyleAlert];
     [alert addAction:[UIAlertAction actionWithTitle:@"Cancel"
         style:UIAlertActionStyleCancel handler:nil]];
@@ -325,12 +309,12 @@
         handler:^(UIAlertAction *action) {
             NSFileManager *fm = [NSFileManager defaultManager];
 
-            // Delete prefs plist (this is the sole source of truth on the tweak side now;
-            // wamMarkChangelogSeen also writes directly to this file, so its deletion is
-            // sufficient to retrigger the splash on next launch).
+            id savedPresets = [self readPrefs][@"userPresets"];
+
             [fm removeItemAtPath:kWAMPrefsPlistPath error:nil];
 
-            // Delete background images
+            if (savedPresets) [self writePrefs:@{@"userPresets": savedPresets}];
+
             NSArray *imagePaths = @[
                 WAMJBPath(@"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs/background.jpg"),
                 WAMJBPath(@"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs/background_dark.jpg"),
@@ -347,16 +331,14 @@
 
             UIAlertController *done = [UIAlertController
                 alertControllerWithTitle:@"Preferences Reset"
-                message:@"All settings have been cleared. Restart app to apply."
+                message:@"All settings have been cleared! Restart the app to apply."
                 preferredStyle:UIAlertControllerStyleAlert];
             [done addAction:[UIAlertAction actionWithTitle:@"Not Yet"
                 style:UIAlertActionStyleCancel handler:nil]];
             [done addAction:[UIAlertAction actionWithTitle:@"Restart"
                 style:UIAlertActionStyleDestructive
                 handler:^(UIAlertAction *action) {
-                pid_t pid;
-                const char *args[] = {"killall", "MobileSMS", NULL};
-                posix_spawn(&pid, [WAMJBPath(@"/usr/bin/killall") UTF8String], NULL, NULL, (char *const *)args, NULL);
+            [WAMPresetStore restartMessages];
                 }]];
             [self presentViewController:done animated:YES completion:nil];
         }]];

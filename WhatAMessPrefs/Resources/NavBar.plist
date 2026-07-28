@@ -80,9 +80,9 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
-			<string>Chat Contact Name</string>
+			<string>Contact Name</string>
 			<key>footerText</key>
-			<string>Color applied to the contact name shown in the chat navigation bar AND on the details view header. Can be overridden per chat in that chat's customization menu.</string>
+			<string>Color applied to the contact name shown in the chat navigation bar and the details view header.</string>
 		</dict>
 		<dict>
 			<key>cell</key>

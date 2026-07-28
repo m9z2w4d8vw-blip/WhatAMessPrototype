@@ -7,14 +7,28 @@
 -(void)applyCustomNavTitle;
 @end
 
+@interface CKChatController : UIViewController
+@end
+
 @interface CKTranscriptCollectionViewController : UIViewController
+-(void)wamRefreshTranscriptCells:(UICollectionView *)cv;
+@end
+
+@interface CKTranscriptCollectionView : UICollectionView
+@end
+
+@interface CKTranscriptPluginBalloonView : UIView
+-(void)wamRoundPluginBalloon;
 @end
 
 @interface CKGradientReferenceView : UIView
+-(void)wamUpdateTranscriptBackground;
+-(void)wamApplyChatBackdrop;
 @end
 
 @interface CKMessagesController : UIViewController
 -(void)updateChatBackground;
+-(void)wamPlaceChatBackground:(UIView *)bg;
 -(void)handlePrefsChanged;
 - (NSArray *)getAllSubviews:(UIView *)view;
 -(void)forceRedrawCell:(UIView *)view;
@@ -90,9 +104,16 @@
 @property (nonatomic, assign) int color;
 @end
 
+@interface CKTextReplyPreviewBalloonView : UIView
+- (id)balloonDescriptor;
+@end
+
 @interface CKBalloonTextView : UITextView
 -(void)updateTextColorForBalloon;
 -(UIColor *)getCustomTextColor;
+@end
+
+@interface CKTranscriptBalloonCell : UICollectionViewCell
 @end
 
 @interface CKTranscriptStatusCell : UICollectionViewCell
@@ -128,6 +149,7 @@
 -(void)handleButtonResumeActive;
 -(void)applyColorsDirectly;
 -(void)wamApplyEntryButtonColors;
+-(void)wamScheduleEntryButtonRetries;
 @end
 
 @interface CKDetailsTableView : UITableView
@@ -206,6 +228,8 @@
 @end
 
 @interface _UIReplicantView : UIView
+- (BOOL)wamShouldBlankReplicant;
+- (void)wamSyncReplicantBlanking;
 @end
 
 @interface _UIPlatterShadowView : UIView
@@ -344,7 +368,6 @@
 -(void)wamRemoveTypingBlur;
 @end
 
-// Category declarations for system classes with added methods
 @interface UISearchTextField (WAMTweakAdditions)
 -(void)applySearchFieldTint;
 @end

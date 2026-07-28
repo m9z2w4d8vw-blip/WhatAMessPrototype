@@ -1,6 +1,8 @@
 #import <Foundation/Foundation.h>
 #import "WAMChatViewController.h"
 #import "WAMBaseListController.h"
+#import "WAMPresetModel.h"
+#import "WAMGradientBuilderController.h"
 
 @implementation WAMChatViewController
 
@@ -11,11 +13,20 @@
     return _specifiers;
 }
 
-#pragma mark - Color Pickers
+#pragma mark - Background
 
-- (void)pickChatBackgroundColor {
-    [self showColorPickerForKey:@"chatBackgroundColor" defaultColor:[UIColor blackColor]];
+- (void)createChatGradient {
+    BOOL dark = [self isEditingDarkMode];
+    WAMGradientBuilderController *b = [[WAMGradientBuilderController alloc] initWithStops:nil];
+    b.onDone = ^(NSArray<NSString *> *stops, WAMGradientDirection direction){
+        if (stops.count >= 2) [WAMPresetStore setGradientBackground:stops direction:direction chat:YES dark:dark];
+        [self dismissViewControllerAnimated:YES completion:nil];
+    };
+    UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:b];
+    [self presentViewController:nav animated:YES completion:nil];
 }
+
+#pragma mark - Color Pickers
 
 - (void)pickMessageBarButtonColor {
     [self showColorPickerForKey:@"messageBarButtonColor" defaultColor:[UIColor systemBlueColor]];
