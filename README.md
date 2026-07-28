@@ -12,15 +12,16 @@ For far too long has the Messages app on modern jailbreaks been boring! With Wha
 ## Features
 
 ### General/App-Wide
+- Per-Contact Chat Customization
 - Change App-Wide Tint Color
 - Modern NavBar: A navigation bar that blurs content closer to the top of the screen. (Inspired by Messages on iOS 26. Togglable)
 - NavBar Tinting
 - Cell Tinting (with optional overrides)
 - Dark/Light Mode Customization
-- Preset Importing/Exporting
+- Preset Browsing, Saving, Importing/Exporting
 
 ### Conversation List View
-- Custom Background Color (Pinned and Cells separately)
+- Custom Gradient Background
 - Custom Background Image
 - Background Image Blur
 - Custom Conversation Title, Preview, and Time/Date Color
@@ -31,9 +32,10 @@ For far too long has the Messages app on modern jailbreaks been boring! With Wha
 - Hide Pinned Conversation Glow
 
 ### Chat View
-- Custom Background Color
+- Custom Gradient Background
 - Custom Background Image
 - Background Image Blur
+- Blurred Message Bubbles
 - Custom SMS, iMessage, and Recieved Bubble Colors
 - Custom SMS, iMessage, and Recieved Bubble Text Colors
 - Custom Timestamp Colors
@@ -42,13 +44,13 @@ For far too long has the Messages app on modern jailbreaks been boring! With Wha
 - Message Input Field Background Color
 - Message Input Field Background Blur
 - Message Input Field Placeholder Text + Text Color
+- Send button and arrow coloring
 - Input Text Color
 - Camera/App Drawer Tint
 - Link Bubble Background + Text Color
 
 ## Compatability
-WhatAMess is compatible with devices running a _rootless_ jailbreak on iOS 16 and 15. ***Rootful support (maybe) coming soon!***
-The tweak was also tested on (and has a few specific hooks for) iOS 17, NathanLR 2.0, on a 2018 11" iPad Pro. That was the only other "jailbroken" device I had for testing. Technically speaking it should be mostly fine on iOS 17/NathanLR 2.0.
+WhatAMess is compatible with devices running a _rootless_ jailbreak on iOS 15 through iOS 18.
 
 NathanLR 1.0 (non-iOS 17 version) is very questionable. Other semi-jailbreaks and injection methods like Serotonin likely don't work (see below).
 
@@ -57,11 +59,11 @@ Compatability with the following is unknown/uncertain as I don't have the device
 - Roothide / Bootstrap (Confirmed working by "Gushi", iOS 16.1)
 - Palera1n (Confirmed working by "galaxy note 7", iPhone X iOS 16.7.7)
 - Palehide (Confirmed working by "galaxy note 7", iPhone 8+ iOS 16.7.12)
+- Palera1n iOS 18.7.2 (Confirmed working by "Yewfie")
 
 ## Known Issues
 The following are issues I hope to address in future versions in the coming months.
 Please keep in mind this is my _first tweak_ and I'm still getting familiar with the process. Things may take time. :)
-- Replies, their "line" indicators, and their own view is currently broken/unmodified.
 - Some text such as "2 Replies" may switch back to the system tint color occasionally on iOS 17.
 - "Notify Anyway" text shown after sending a message to another user in DND mode may revert back to system color when leaving and reopening window.
 - Link Bubbles in Pinned Message Previews sometimes break, displaying a square instead of a bubble.
@@ -69,7 +71,6 @@ Please keep in mind this is my _first tweak_ and I'm still getting familiar with
 
 ## Features I'd Like to Add
 - Custom Large Title
-- Redesigned Conversation Cells
 - Better User Images + Name at Top of Chat View
 - Your Suggestions!
 
