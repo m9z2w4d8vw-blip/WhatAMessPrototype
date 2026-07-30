@@ -1767,16 +1767,6 @@ static UIColor *getSentBubbleColor() {
 
 static UIColor *getReceivedBubbleColor() {
     NSString *key = isDarkMode() ? @"receivedBubbleColorDark" : @"receivedBubbleColor";
-    if (wamIsNotificationExtension()) {   // DIAG
-        NSString *nm = getCurrentContactName();
-        NSString *tR = isDarkMode() ? @"receivedTextColorDark" : @"receivedTextColor";
-        NSString *tS = isDarkMode() ? @"sentTextColorDark" : @"sentTextColor";
-        NSString *state = [NSString stringWithFormat:@"notif=%@ enabled=%d bubble=%@ rxText=%@ sentText=%@",
-              gWAMNotifContactName, nm.length ? perContactOverridesEnabled(nm) : -1,
-              effectiveValueForKey(key), effectiveValueForKey(tR), effectiveValueForKey(tS)];
-        static NSString *lastState = nil;
-        if (![state isEqualToString:lastState]) { lastState = [state copy]; WAMLOG(@"[WAMDIAG] recvColor %@", state); }
-    }
     UIColor *c = colorFromHex(effectiveValueForKey(key));
     if (c) return c;
     return isDarkMode()
@@ -3871,12 +3861,6 @@ static BOOL wamIsInSendAnimationWindow(UIView *v) {
 
 static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
     if (!v) return;
-    if (wamIsNotificationExtension()) {   // DIAG
-        static NSString *last = nil;
-        NSString *s = [NSString stringWithFormat:@"%@ wantClear=%d opaque=%d",
-                       NSStringFromClass([v class]), wantClear, opaqueFallback];
-        if (![s isEqualToString:last]) { last = [s copy]; WAMLOG(@"[WAMDIAG] backdrop %@", s); }
-    }
     if (!objc_getAssociatedObject(v, &kWAMOrigBackdropKey)) {
         objc_setAssociatedObject(v, &kWAMOrigBackdropKey,
                                  v.backgroundColor ?: (id)[NSNull null],
@@ -5548,14 +5532,11 @@ static NSString *wamContactNameFromTranscript(id vc) {
 }
 
 static void wamAdoptNotificationContact(id transcriptVC) {
-    WAMLOG(@"[WAMDIAG] adopt bundle=%@ ext=%d vcClass=%@ existing=%@", [NSBundle mainBundle].bundleIdentifier,
-          wamIsNotificationExtension(), [transcriptVC class], gWAMNotifContactName);   // DIAG
     if (!wamIsNotificationExtension()) return;
     gWAMChatIsActiveSurface = YES;
     if (gWAMNotifContactName.length) return;
     NSString *nm = wamContactNameFromTranscript(transcriptVC);
     if (!nm.length) nm = getCurrentContactName();
-    WAMLOG(@"[WAMDIAG] adopt pin=%@", nm);   // DIAG
     if (nm.length) {
         gWAMNotifContactName = [nm copy];
         refreshPrefs();
@@ -5730,14 +5711,6 @@ static void wamAdoptNotificationContact(id transcriptVC) {
     }
 
     NSString *path = shouldShowAnyChatBgImage() ? getChatImagePath() : nil;
-    if (wamIsNotificationExtension()) {   // DIAG
-        static NSString *last = nil;
-        BOOL exists = path.length && [[NSFileManager defaultManager] fileExistsAtPath:path];
-        NSString *s = [NSString stringWithFormat:@"win=%@ ancBg=%d show=%d exists=%d blur=%.1f path=%@",
-                       NSStringFromClass([win class]), ancestorHasBg, shouldShowAnyChatBgImage(),
-                       exists, getEffectiveChatBgBlur(), path];
-        if (![s isEqualToString:last]) { last = [s copy]; WAMLOG(@"[WAMDIAG] bg %@", s); }
-    }
     if (ancestorHasBg || !path) {
         if (bg) {
             [bg removeFromSuperview];
@@ -12948,7 +12921,6 @@ static void wamKillMessagesCallback(CFNotificationCenterRef center, void *observ
     %ctor
 ============*/
 %ctor {
-    WAMLOG(@"[WAMDIAG] ctor loaded in bundle=%@", [NSBundle mainBundle].bundleIdentifier);   // DIAG
     reloadPrefs();
 
     CFNotificationCenterAddObserver(
