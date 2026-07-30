@@ -43,6 +43,7 @@ BOOL isiOS15();
 BOOL isPerContactChatBgEnabled();
 BOOL isChatImageBgEnabled();
 CGFloat getChatImageBlurAmount();
+static BOOL wamIsNotificationExtension(void);
 
 //Version Splash screen, make sure to bump this value so it acutally registers an update occurred.
 #define kWAMTweakVersion @"1.3"
@@ -56,6 +57,7 @@ static NSString *gWAMCurrentContactName = nil;
 static NSString *gWAMCurrentContactDisplayName = nil;
 static NSString *gWAMTriggerNameOverride = nil;
 static NSString *gWAMActiveChatName = nil;
+static NSString *gWAMNotifContactName = nil;
 static BOOL gWAMChatIsActiveSurface = NO;
 static BOOL gWAMPreviewActive = NO;
 static NSTimeInterval gWAMCacheSetAt = 0;
@@ -576,6 +578,7 @@ static BOOL wamIsPreviewContext(UIViewController *vc) {
 }
 
 static NSString *getCurrentContactName(void) {
+    if (gWAMNotifContactName.length) return gWAMNotifContactName;
     Class messagesCtrlClass = %c(CKMessagesController);
     if (!messagesCtrlClass) return nil;
 
@@ -831,7 +834,7 @@ static void clearPerContactOverride(NSString *contactName, NSString *key) {
 __attribute__((unused))
 static id effectiveValueForKey(NSString *key) {
     if (!key.length) return nil;
-    if (!gWAMChatIsActiveSurface) return loadPrefs()[key];
+    if (!gWAMChatIsActiveSurface && !gWAMNotifContactName.length) return loadPrefs()[key];
     NSString *name = getCurrentContactName();
     if (name.length && perContactOverridesEnabled(name)) {
         id override = getPerContactOverride(name, key);
@@ -842,7 +845,7 @@ static id effectiveValueForKey(NSString *key) {
 
 __attribute__((unused))
 static BOOL chatHasPerContactOverride(void) {
-    if (!gWAMChatIsActiveSurface) return NO;
+    if (!gWAMChatIsActiveSurface && !gWAMNotifContactName.length) return NO;
     NSString *name = getCurrentContactName();
     if (!name.length) return NO;
     return perContactOverridesEnabled(name);
@@ -993,12 +996,13 @@ static void wamResolvePerContactImageAndName(NSString **outPath, NSString **outN
     if (outPath) *outPath = nil;
     if (outName) *outName = nil;
     if (!isPerContactChatBgEnabled()) return;
-    if (!gWAMChatIsActiveSurface) return;
+    if (!gWAMChatIsActiveSurface && !gWAMNotifContactName.length) return;
 
     NSMutableArray *candidates = [NSMutableArray array];
     void (^add)(NSString *) = ^(NSString *n) {
         if (n.length && ![candidates containsObject:n]) [candidates addObject:n];
     };
+    add(gWAMNotifContactName);
     add(getActiveContactNameForBg());
     add(gWAMTriggerNameOverride);
     add(gWAMCurrentContactName);
@@ -1647,6 +1651,19 @@ static UIImage *wamChatBackgroundImage(NSString *path, CGFloat blurAmount) {
 
     UIImage *img = loadImageUncached(path);
     if (!img) return nil;
+    if (wamIsNotificationExtension() && blurAmount > 0) {
+        CGFloat maxDim = 500.0;
+        CGFloat w = img.size.width * img.scale, h = img.size.height * img.scale;
+        CGFloat s = MIN(1.0, maxDim / MAX(w, h));
+        if (s < 1.0) {
+            CGSize ns = CGSizeMake(img.size.width * s, img.size.height * s);
+            UIGraphicsImageRenderer *r = [[UIGraphicsImageRenderer alloc] initWithSize:ns];
+            img = [r imageWithActions:^(UIGraphicsImageRendererContext *ctx) {
+                [img drawInRect:CGRectMake(0, 0, ns.width, ns.height)];
+            }];
+            blurAmount *= s;
+        }
+    }
     if (blurAmount > 0) img = blurImage(img, blurAmount);
     [cache setObject:img forKey:key];
     return img;
@@ -1750,6 +1767,16 @@ static UIColor *getSentBubbleColor() {
 
 static UIColor *getReceivedBubbleColor() {
     NSString *key = isDarkMode() ? @"receivedBubbleColorDark" : @"receivedBubbleColor";
+    if (wamIsNotificationExtension()) {   // DIAG
+        NSString *nm = getCurrentContactName();
+        NSString *tR = isDarkMode() ? @"receivedTextColorDark" : @"receivedTextColor";
+        NSString *tS = isDarkMode() ? @"sentTextColorDark" : @"sentTextColor";
+        NSString *state = [NSString stringWithFormat:@"notif=%@ enabled=%d bubble=%@ rxText=%@ sentText=%@",
+              gWAMNotifContactName, nm.length ? perContactOverridesEnabled(nm) : -1,
+              effectiveValueForKey(key), effectiveValueForKey(tR), effectiveValueForKey(tS)];
+        static NSString *lastState = nil;
+        if (![state isEqualToString:lastState]) { lastState = [state copy]; WAMLOG(@"[WAMDIAG] recvColor %@", state); }
+    }
     UIColor *c = colorFromHex(effectiveValueForKey(key));
     if (c) return c;
     return isDarkMode()
@@ -3844,6 +3871,12 @@ static BOOL wamIsInSendAnimationWindow(UIView *v) {
 
 static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
     if (!v) return;
+    if (wamIsNotificationExtension()) {   // DIAG
+        static NSString *last = nil;
+        NSString *s = [NSString stringWithFormat:@"%@ wantClear=%d opaque=%d",
+                       NSStringFromClass([v class]), wantClear, opaqueFallback];
+        if (![s isEqualToString:last]) { last = [s copy]; WAMLOG(@"[WAMDIAG] backdrop %@", s); }
+    }
     if (!objc_getAssociatedObject(v, &kWAMOrigBackdropKey)) {
         objc_setAssociatedObject(v, &kWAMOrigBackdropKey,
                                  v.backgroundColor ?: (id)[NSNull null],
@@ -5476,16 +5509,80 @@ static void wamDeOpaqueBalloonTree(UIView *root) {
 
 %end
 
+static BOOL wamIsNotificationExtension(void) {
+    static BOOL computed = NO, result = NO;
+    if (!computed) {
+        NSString *bid = [NSBundle mainBundle].bundleIdentifier ?: @"";
+        result = ![bid isEqualToString:@"com.apple.MobileSMS"];
+        computed = YES;
+    }
+    return result;
+}
+
+static NSString *wamContactNameFromTranscript(id vc) {
+    NSArray *paths = @[@"chatController.chat.displayName", @"chatController.conversation.displayName",
+                       @"conversation.chat.displayName", @"conversation.displayName", @"chat.displayName"];
+    for (NSString *kp in paths) {
+        @try {
+            id v = [vc valueForKeyPath:kp];
+            if ([v isKindOfClass:[NSString class]] && [(NSString *)v length]) return v;
+        } @catch (__unused NSException *e) {}
+    }
+
+    UIView *root = [vc isKindOfClass:[UIViewController class]] ? ((UIViewController *)vc).view : nil;
+    if (root) {
+        UILabel *best = nil; CGFloat bestSize = 0;
+        NSMutableArray *queue = [NSMutableArray arrayWithObject:root];
+        while (queue.count) {
+            UIView *view = queue.firstObject; [queue removeObjectAtIndex:0];
+            if ([view isKindOfClass:[UILabel class]] && ![view isKindOfClass:%c(CKDateLabel)]) {
+                UILabel *l = (UILabel *)view;
+                if (l.text.length && l.font.pointSize > bestSize) { bestSize = l.font.pointSize; best = l; }
+            }
+            [queue addObjectsFromArray:view.subviews];
+        }
+        NSString *t = [best.text stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+        if (t.length) return t;
+    }
+    return nil;
+}
+
+static void wamAdoptNotificationContact(id transcriptVC) {
+    WAMLOG(@"[WAMDIAG] adopt bundle=%@ ext=%d vcClass=%@ existing=%@", [NSBundle mainBundle].bundleIdentifier,
+          wamIsNotificationExtension(), [transcriptVC class], gWAMNotifContactName);   // DIAG
+    if (!wamIsNotificationExtension()) return;
+    gWAMChatIsActiveSurface = YES;
+    if (gWAMNotifContactName.length) return;
+    NSString *nm = wamContactNameFromTranscript(transcriptVC);
+    if (!nm.length) nm = getCurrentContactName();
+    WAMLOG(@"[WAMDIAG] adopt pin=%@", nm);   // DIAG
+    if (nm.length) {
+        gWAMNotifContactName = [nm copy];
+        refreshPrefs();
+    }
+}
+
 %hook CKTranscriptCollectionViewController
 
 - (void)viewDidLoad {
     %orig;
+    wamAdoptNotificationContact(self);
     wamApplyBackdrop(self.view, wamHasCustomChatBackdrop(), YES);
 
     [[NSNotificationCenter defaultCenter] addObserver:self
         selector:@selector(handleTranscriptPrefsChanged)
         name:kPrefsChangedNotification
         object:nil];
+}
+
+- (void)viewWillAppear:(BOOL)animated {
+    %orig;
+    wamAdoptNotificationContact(self);
+}
+
+- (void)viewDidLayoutSubviews {
+    %orig;
+    if (wamIsNotificationExtension() && !gWAMNotifContactName.length) wamAdoptNotificationContact(self);
 }
 
 %new
@@ -5633,6 +5730,14 @@ static void wamDeOpaqueBalloonTree(UIView *root) {
     }
 
     NSString *path = shouldShowAnyChatBgImage() ? getChatImagePath() : nil;
+    if (wamIsNotificationExtension()) {   // DIAG
+        static NSString *last = nil;
+        BOOL exists = path.length && [[NSFileManager defaultManager] fileExistsAtPath:path];
+        NSString *s = [NSString stringWithFormat:@"win=%@ ancBg=%d show=%d exists=%d blur=%.1f path=%@",
+                       NSStringFromClass([win class]), ancestorHasBg, shouldShowAnyChatBgImage(),
+                       exists, getEffectiveChatBgBlur(), path];
+        if (![s isEqualToString:last]) { last = [s copy]; WAMLOG(@"[WAMDIAG] bg %@", s); }
+    }
     if (ancestorHasBg || !path) {
         if (bg) {
             [bg removeFromSuperview];
@@ -12843,6 +12948,7 @@ static void wamKillMessagesCallback(CFNotificationCenterRef center, void *observ
     %ctor
 ============*/
 %ctor {
+    WAMLOG(@"[WAMDIAG] ctor loaded in bundle=%@", [NSBundle mainBundle].bundleIdentifier);   // DIAG
     reloadPrefs();
 
     CFNotificationCenterAddObserver(
