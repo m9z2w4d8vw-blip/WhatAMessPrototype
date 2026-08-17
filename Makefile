@@ -6,7 +6,7 @@ include $(THEOS)/makefiles/common.mk
 
 TWEAK_NAME = WhatAMess
 
-WhatAMess_FILES = Tweak.x WAMFilterTweak.x WAMDebugLog.m WAMPresetModel.m WAMPresetPreviewView.m WAMPresetCardView.m WAMGradientBuilderController.m WAMFilterModel.m WAMManageFilteringController.m WAMFilterLogViewController.m WAMFilterResultsController.m
+WhatAMess_FILES = Tweak.x WAMFilterTweak.x WAMDebugLog.m WAMPresetModel.m WAMPresetPreviewView.m WAMPresetCardView.m WAMGradientBuilderController.m WAMFilterModel.m WAMManageFilteringController.m WAMFilterLogViewController.m
 WhatAMess_CFLAGS = -fobjc-arc
 WhatAMess_FRAMEWORKS = UIKit
 

@@ -1,10 +1,10 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import <stdlib.h>
+#import <objc/message.h>
 #import "WAMFilterModel.h"
 #import "WAMDebugLog.h"
 #import "WAMManageFilteringController.h"
-#import "WAMFilterResultsController.h"
 
 #define kWAMFilterButtonTag 0x57414D46
 
@@ -15,6 +15,12 @@ static const void *kWAMFOwnedNavKey   = &kWAMFOwnedNavKey;
 static NSUInteger gWAMFInstallCount = 0;
 static NSUInteger gWAMFReinjectCount = 0;
 
+@protocol WAMSnapshot <NSObject>
+- (NSArray *)sectionIdentifiers;
+- (NSArray *)itemIdentifiersInSectionWithIdentifier:(id)sectionIdentifier;
+- (void)deleteItemsWithIdentifiers:(NSArray *)identifiers;
+@end
+
 @interface CKConversationListCollectionViewController : UICollectionViewController
 - (void)wamfInstallFilterButton;
 - (UIMenu *)wamfBuildFilterMenu;
@@ -23,6 +29,18 @@ static NSUInteger gWAMFReinjectCount = 0;
 - (void)wamfOpenRecentlyDeleted;
 - (void)wamfRefreshForFilterChange;
 - (void)wamfDumpRuntimeShape;
+
+// Real API, confirmed by the runtime dump on iOS 17.0
+- (id)conversationForItemIdentifier:(id)identifier;
+- (NSUInteger)filterMode;
+- (id)generateSnapshot;
+- (void)applyConversationListSnapshot:(id)snapshot
+                 animatingDifferences:(BOOL)animate
+                           completion:(void (^)(void))completion;
+
+- (NSString *)wamfNameForConversation:(id)conversation;
+- (id)wamfFilterSnapshot:(id)snapshot;
+- (void)wamfReapplyFilteredSnapshot;
 @end
 
 @interface UINavigationItem (WAMFilter)
@@ -334,6 +352,100 @@ static void wamfEnsureDarwinObservers(void) {
     WAMLog(@"life", @"refreshForFilterChange filter=%@",
            [WAMFilterStore describeFilter:[WAMFilterStore activeFilter]]);
     [self wamfInstallFilterButton];
+    [self wamfReapplyFilteredSnapshot];
+}
+
+%new
+- (NSString *)wamfNameForConversation:(id)conversation {
+    if (!conversation) return nil;
+    static NSArray *sels = nil;
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        sels = @[@"displayName", @"name", @"title", @"roomName",
+                 @"effectiveDisplayName", @"primaryRecipientDisplayName"];
+    });
+    for (NSString *name in sels) {
+        SEL sel = NSSelectorFromString(name);
+        if (![conversation respondsToSelector:sel]) continue;
+        id value = ((id (*)(id, SEL))objc_msgSend)(conversation, sel);
+        if ([value isKindOfClass:[NSString class]] && [(NSString *)value length]) {
+            return (NSString *)value;
+        }
+    }
+    return nil;
+}
+
+%new
+- (id)wamfFilterSnapshot:(id)snapshot {
+    if (!snapshot) return snapshot;
+    if (![WAMFilterStore filterButtonEnabled]) return snapshot;
+    if (![self respondsToSelector:@selector(conversationForItemIdentifier:)]) return snapshot;
+
+    // Messages has its own filter modes (recently deleted, junk, unknown
+    // senders). When one is active, leave the snapshot completely alone.
+    if ([self respondsToSelector:@selector(filterMode)] && [self filterMode] != 0) {
+        WAMLogV(@"snap", @"skipped: native filterMode=%lu", (unsigned long)[self filterMode]);
+        return snapshot;
+    }
+
+    WAMFilter active = [WAMFilterStore activeFilter];
+    id<WAMSnapshot> snap = (id<WAMSnapshot>)snapshot;
+    if (![snap respondsToSelector:@selector(sectionIdentifiers)]) return snapshot;
+
+    NSMutableArray *drop = [NSMutableArray array];
+    NSUInteger total = 0, resolved = 0;
+
+    for (id section in [snap sectionIdentifiers]) {
+        for (id item in [snap itemIdentifiersInSectionWithIdentifier:section]) {
+            total++;
+            id conversation = [self conversationForItemIdentifier:item];
+            if (!conversation) continue;
+
+            NSString *name = [self wamfNameForConversation:conversation];
+            if (!name.length) continue;
+            resolved++;
+
+            // The snapshot is a complete list, so this finally gives us a full
+            // roster instead of only the rows that happened to be on screen.
+            [WAMFilterStore recordSenderTitle:name preview:nil];
+
+            if (![WAMFilterStore shouldShowTitle:name underFilter:active]) {
+                [drop addObject:item];
+            }
+        }
+    }
+
+    if (drop.count) {
+        [snap deleteItemsWithIdentifiers:drop];
+    }
+    WAMLog(@"snap", @"filter=%@ items=%lu resolved=%lu dropped=%lu",
+           [WAMFilterStore describeFilter:active],
+           (unsigned long)total, (unsigned long)resolved, (unsigned long)drop.count);
+    return snapshot;
+}
+
+%new
+- (void)wamfReapplyFilteredSnapshot {
+    if (![self respondsToSelector:@selector(generateSnapshot)]) return;
+    if (![self respondsToSelector:@selector(applyConversationListSnapshot:animatingDifferences:completion:)]) return;
+
+    id snapshot = [self generateSnapshot];
+    if (!snapshot) return;
+    WAMLog(@"snap", @"reapplying for filter=%@",
+           [WAMFilterStore describeFilter:[WAMFilterStore activeFilter]]);
+    [self applyConversationListSnapshot:snapshot animatingDifferences:YES completion:nil];
+}
+
+- (id)generateSnapshot {
+    id snapshot = %orig;
+    return [self wamfFilterSnapshot:snapshot];
+}
+
+- (void)applyConversationListSnapshot:(id)snapshot
+                 animatingDifferences:(BOOL)animate
+                           completion:(void (^)(void))completion {
+    id filtered = [self wamfFilterSnapshot:snapshot];
+    %orig(filtered, animate, completion);
 }
 
 %new
@@ -525,7 +637,6 @@ static void wamfEnsureDarwinObservers(void) {
 
     NSArray *top = @[
         make(WAMFilterAllMessages),
-        make(WAMFilterInbox),
         make(WAMFilterUnknownSenders),
         transactions,
         make(WAMFilterTwoFactor),
@@ -551,13 +662,6 @@ static void wamfEnsureDarwinObservers(void) {
     [WAMFilterStore setActiveFilter:picked];
     [WAMFilterStore postFilterChanged];
     [self wamfRefreshForFilterChange];
-
-    // Messages means the untouched native list. Anything else opens a sheet,
-    // because in-place filtering needs the data source and that is not wired yet.
-    if (picked == WAMFilterAllMessages) return;
-
-    UINavigationController *nav = [WAMFilterResultsController wrappedForFilter:picked];
-    [self presentViewController:nav animated:YES completion:nil];
 }
 
 %new

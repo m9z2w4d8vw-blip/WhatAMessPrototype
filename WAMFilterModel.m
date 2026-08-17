@@ -195,11 +195,10 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 #pragma mark - Matching
 
 + (BOOL)filter:(WAMFilter)active matchesEffective:(WAMFilter)effective {
-    if (active == WAMFilterAllMessages) return YES;
-
-    // Inbox: real conversations only. Everything the classifier or the user has
-    // marked as transactional, 2FA, promotional or spam is excluded.
-    if (active == WAMFilterInbox) {
+    // "Messages" is the default view and means real conversations only:
+    // everything the classifier or the user has marked as transactional, 2FA,
+    // promotional or spam is excluded.
+    if (active == WAMFilterAllMessages || active == WAMFilterInbox) {
         switch (effective) {
             case WAMFilterTwoFactor:
             case WAMFilterTransactions:
@@ -225,7 +224,6 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 }
 
 + (BOOL)shouldShowTitle:(NSString *)title underFilter:(WAMFilter)active {
-    if (active == WAMFilterAllMessages) return YES;
     return [self filter:active matchesEffective:[self effectiveFilterForTitle:title]];
 }
 
@@ -303,7 +301,6 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 }
 
 + (NSInteger)countForFilter:(WAMFilter)filter {
-    if (filter == WAMFilterAllMessages) return 0;
     NSInteger n = 0;
     for (NSDictionary *e in [self roster]) {
         if ([self filter:filter matchesEffective:[self effectiveFilterForTitle:e[@"title"]]]) n++;
