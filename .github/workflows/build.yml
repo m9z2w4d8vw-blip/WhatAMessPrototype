@@ -24,27 +24,63 @@ jobs:
 
       - name: Install build dependencies
         run: |
+          set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential fakeroot git perl curl zsh unzip rsync xz-utils \
-            libtinfo5 ldid
+            build-essential fakeroot git perl curl zsh unzip rsync xz-utils dpkg-dev
+          # Older ncurses runtime that some prebuilt clang toolchains link against.
+          # Best-effort: not fatal if the distro has dropped it.
+          sudo apt-get install -y --no-install-recommends libtinfo5 || true
+          sudo apt-get install -y --no-install-recommends libncurses5 || true
+
+      - name: Install ldid
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # ldid is not an Ubuntu package; it comes from Procursus.
+          # Resolve the current release asset so a moved tag does not break the build.
+          URL=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+                  https://api.github.com/repos/ProcursusTeam/ldid/releases/latest \
+                | grep -oE 'https://[^"]+/ldid_linux_x86_64' | head -n1 || true)
+          if [ -z "$URL" ]; then
+            echo "API lookup failed, falling back to a pinned release"
+            URL=https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
+          fi
+          echo "Fetching $URL"
+          curl -fsSL -o /tmp/ldid "$URL"
+          sudo install -m 0755 /tmp/ldid /usr/local/bin/ldid
+          which ldid
 
       - name: Cache Theos
         id: cache-theos
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/../theos
-          key: theos-ubuntu2204-swift55-v1
+          key: theos-ubuntu2204-v2
 
       - name: Set up Theos
         if: steps.cache-theos.outputs.cache-hit != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euxo pipefail
           git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
 
-          # Linux cross toolchain (clang capable of targeting arm64 iOS)
-          curl -fsSL -o /tmp/toolchain.tar.xz \
-            https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.2.0/swift-5.5-ubuntu20.04.tar.xz
+          # Linux cross toolchain (clang capable of targeting arm64 iOS).
+          # Resolve from the latest release, preferring a 22.04 build, then 20.04.
+          ASSETS=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+                     https://api.github.com/repos/kabiroberai/swift-toolchain-linux/releases/latest \
+                   | grep -oE 'https://[^"]+\.tar\.xz' || true)
+          TC=$(echo "$ASSETS" | grep -m1 'ubuntu22' || true)
+          [ -n "$TC" ] || TC=$(echo "$ASSETS" | grep -m1 'ubuntu20' || true)
+          [ -n "$TC" ] || TC=$(echo "$ASSETS" | head -n1 || true)
+          if [ -z "$TC" ]; then
+            echo "API lookup failed, falling back to a pinned toolchain"
+            TC=https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.2.0/swift-5.5-ubuntu20.04.tar.xz
+          fi
+          echo "Toolchain: $TC"
+          curl -fsSL -o /tmp/toolchain.tar.xz "$TC"
           mkdir -p "$THEOS/toolchain/linux/iphone"
           tar -xf /tmp/toolchain.tar.xz -C "$THEOS/toolchain/linux/iphone" --strip-components=1
           rm -f /tmp/toolchain.tar.xz
@@ -54,6 +90,11 @@ jobs:
             https://github.com/theos/sdks.git /tmp/sdks
           cd /tmp/sdks
           SDK=$(git ls-tree --name-only HEAD | grep -E '^iPhoneOS1[5-9]\.[0-9]+\.sdk$' | sort -V | tail -1)
+          if [ -z "$SDK" ]; then
+            echo "::error::No iPhoneOS SDK matched in theos/sdks"
+            git ls-tree --name-only HEAD
+            exit 1
+          fi
           echo "Selected SDK: $SDK"
           git sparse-checkout set "$SDK"
           mkdir -p "$THEOS/sdks"
