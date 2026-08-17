@@ -57,7 +57,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ github.workspace }}/../theos
-          key: theos-ubuntu2204-v3
+          key: theos-ubuntu2204-v4
 
       - name: Set up Theos
         if: steps.cache-theos.outputs.cache-hit != 'true'
@@ -90,9 +90,42 @@ jobs:
           echo "Host arch: $(uname -m)"
           echo "Toolchain: $TC"
           curl -fsSL -o /tmp/toolchain.tar.xz "$TC"
+
+          # Do not assume the archive's internal layout. Extract, locate bin/clang,
+          # and treat its grandparent as the toolchain root. Handles both
+          # <root>/bin/clang and <root>/usr/bin/clang nesting.
+          mkdir -p /tmp/tc
+          tar -xf /tmp/toolchain.tar.xz -C /tmp/tc
+          echo "--- archive layout ---"
+          find /tmp/tc -maxdepth 3 | head -n 40 || true
+          echo "----------------------"
+
+          # head closes the pipe, so guard against SIGPIPE tripping pipefail
+          CLANG=$(find /tmp/tc -path '*/bin/clang' \( -type f -o -type l \) | head -n1 || true)
+          if [ -z "$CLANG" ]; then
+            # Some builds ship only a versioned binary, e.g. bin/clang-13
+            CLANG=$(find /tmp/tc -path '*/bin/clang-*' \( -type f -o -type l \) | head -n1 || true)
+            if [ -n "$CLANG" ]; then
+              ln -sf "$(basename "$CLANG")" "$(dirname "$CLANG")/clang"
+              CLANG="$(dirname "$CLANG")/clang"
+              echo "Created clang symlink -> $CLANG"
+            fi
+          fi
+          if [ -z "$CLANG" ]; then
+            echo "::error::No clang found in the toolchain archive"
+            find /tmp/tc -maxdepth 5 | head -n 200 || true
+            exit 1
+          fi
+          TCROOT=$(dirname "$(dirname "$CLANG")")
+          echo "Toolchain root: $TCROOT"
+
           mkdir -p "$THEOS/toolchain/linux/iphone"
-          tar -xf /tmp/toolchain.tar.xz -C "$THEOS/toolchain/linux/iphone" --strip-components=1
-          rm -f /tmp/toolchain.tar.xz
+          tar -cf - -C "$TCROOT" . | tar -xf - -C "$THEOS/toolchain/linux/iphone"
+          rm -rf /tmp/tc /tmp/toolchain.tar.xz
+
+          echo "--- installed toolchain ---"
+          ls "$THEOS/toolchain/linux/iphone" || true
+          ls "$THEOS/toolchain/linux/iphone/bin" | head -n 20 || true
 
           # Fail here, with the cause on screen, rather than during compilation
           "$THEOS/toolchain/linux/iphone/bin/clang" --version
