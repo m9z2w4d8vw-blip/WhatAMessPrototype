@@ -1221,10 +1221,13 @@ BOOL isiOS15() {
            ![[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:iOS16];
 }
 
-static void wamLogDarkModeChange(BOOL now);
 static void updateDarkModeFromTraits(UITraitCollection *tc) {
     if (@available(iOS 13.0, *)) {
-        gWAMIsDarkModeOnIOS15 = (tc.userInterfaceStyle == UIUserInterfaceStyleDark);
+        BOOL now = (tc.userInterfaceStyle == UIUserInterfaceStyleDark);
+        if (now != gWAMIsDarkModeOnIOS15) {
+            WAMLog(@"mode", @"dark mode -> %@ (iOS 15 trait path)", now ? @"dark" : @"light");
+        }
+        gWAMIsDarkModeOnIOS15 = now;
     }
 }
 
