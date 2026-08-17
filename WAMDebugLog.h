@@ -41,6 +41,20 @@ void WAMLogTraceSite(WAMTraceSite *site);
         WAMLogTraceSite(&_wamSite); \
     } while (0)
 
+// Throttled: emits at most once every `secs` per callsite. For state that is
+// useful to see periodically but sits on a layout or per-frame path.
+#define WAMLogEvery(secs, cat, fmt, ...) \
+    do { \
+        if (WAMLogLevelCurrent() >= WAMLogLevelNormal) { \
+            static NSTimeInterval _wamLast = 0; \
+            NSTimeInterval _wamNow = [NSDate timeIntervalSinceReferenceDate]; \
+            if (_wamNow - _wamLast >= (secs)) { \
+                _wamLast = _wamNow; \
+                WAMLogWrite((cat), [NSString stringWithFormat:(fmt), ##__VA_ARGS__]); \
+            } \
+        } \
+    } while (0)
+
 @interface WAMDebugLog : NSObject
 
 + (NSString *)path;
