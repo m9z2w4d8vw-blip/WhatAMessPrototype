@@ -31,6 +31,10 @@ static NSString *WAMDLPrefsPath(void) {
     return [WAMDLDataDir() stringByAppendingString:@".plist"];
 }
 
+static NSString *WAMDLCallLogPath(void) {
+    return [WAMDLDataDir() stringByAppendingPathComponent:@"whatamess_calls.log"];
+}
+
 static NSString *WAMDLLogPath(void) {
     return [WAMDLDataDir() stringByAppendingPathComponent:@"whatamess_debug.log"];
 }
@@ -91,6 +95,32 @@ static void WAMDLOpenLocked(void) {
     }
 }
 
+static int gCallFD = -1;
+static unsigned long long gCallWritten = 0;
+static const unsigned long long kMaxCallBytes = 4 * 1024 * 1024;
+
+static void WAMDLOpenCallsLocked(void) {
+    if (gCallFD >= 0) return;
+    NSString *path = WAMDLCallLogPath();
+    [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent]
+                             withIntermediateDirectories:YES attributes:nil error:nil];
+    gCallFD = open([path fileSystemRepresentation], O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (gCallFD >= 0) {
+        struct stat st;
+        gCallWritten = (fstat(gCallFD, &st) == 0) ? (unsigned long long)st.st_size : 0;
+    }
+}
+
+static void WAMDLRotateCallsLocked(void) {
+    if (gCallFD >= 0) { close(gCallFD); gCallFD = -1; }
+    NSString *path = WAMDLCallLogPath();
+    NSFileManager *fm = [NSFileManager defaultManager];
+    [fm removeItemAtPath:[path stringByAppendingString:@".1"] error:nil];
+    [fm moveItemAtPath:path toPath:[path stringByAppendingString:@".1"] error:nil];
+    gCallWritten = 0;
+    WAMDLOpenCallsLocked();
+}
+
 static void WAMDLRotateLocked(void) {
     if (gLogFD >= 0) {
         close(gLogFD);
@@ -131,12 +161,26 @@ void WAMLogWrite(NSString *category, NSString *message) {
     if (!bytes) return;
     size_t len = strlen(bytes);
 
+    // Per-call traces go to a separate file. Upstream's
+    // applyCustomColorsToCKLabelsInView: alone can fire 18,000 times in five
+    // seconds, which used to rotate every [nav] and [life] line out of existence.
+    BOOL isCallTrace = [category isEqualToString:@"call"];
+
     os_unfair_lock_lock(&gWriteLock);
-    WAMDLOpenLocked();
-    if (gLogFD >= 0) {
-        ssize_t n = write(gLogFD, bytes, len);
-        if (n > 0) gWritten += (unsigned long long)n;
-        if (gWritten > kMaxBytes) WAMDLRotateLocked();
+    if (isCallTrace) {
+        WAMDLOpenCallsLocked();
+        if (gCallFD >= 0) {
+            ssize_t n = write(gCallFD, bytes, len);
+            if (n > 0) gCallWritten += (unsigned long long)n;
+            if (gCallWritten > kMaxCallBytes) WAMDLRotateCallsLocked();
+        }
+    } else {
+        WAMDLOpenLocked();
+        if (gLogFD >= 0) {
+            ssize_t n = write(gLogFD, bytes, len);
+            if (n > 0) gWritten += (unsigned long long)n;
+            if (gWritten > kMaxBytes) WAMDLRotateLocked();
+        }
     }
     os_unfair_lock_unlock(&gWriteLock);
 }
@@ -194,7 +238,16 @@ void WAMLogTraceSite(WAMTraceSite *site) {
     }
 
     if (level >= WAMLogLevelFirehose) {
-        WAMLogWrite(@"call", [NSString stringWithFormat:@"%s #%lu", site->name, site->total]);
+        // One runaway site must not drown the trace. Above the threshold a site
+        // is counted but no longer printed per call; the 5s summary still has it.
+        static const unsigned long kFloodLimit = 400;
+        if (site->sinceFlush <= kFloodLimit) {
+            WAMLogWrite(@"call", [NSString stringWithFormat:@"%s #%lu", site->name, site->total]);
+        } else if (site->sinceFlush == kFloodLimit + 1) {
+            WAMLogWrite(@"call", [NSString stringWithFormat:
+                @"%s exceeded %lu calls this window -- per-call logging suppressed, see [hooks] summary",
+                site->name, kFloodLimit]);
+        }
     }
 
     NSTimeInterval now = [NSDate timeIntervalSinceReferenceDate];
@@ -236,6 +289,13 @@ void WAMLogTraceSite(WAMTraceSite *site) {
 + (void)clear {
     [[NSFileManager defaultManager] removeItemAtPath:WAMDLLogPath() error:nil];
     [[NSFileManager defaultManager] removeItemAtPath:[self rotatedPath] error:nil];
+    [[NSFileManager defaultManager] removeItemAtPath:WAMDLCallLogPath() error:nil];
+    [[NSFileManager defaultManager] removeItemAtPath:
+        [WAMDLCallLogPath() stringByAppendingString:@".1"] error:nil];
+    os_unfair_lock_lock(&gWriteLock);
+    if (gCallFD >= 0) { close(gCallFD); gCallFD = -1; gCallWritten = 0; }
+    if (gLogFD >= 0) { close(gLogFD); gLogFD = -1; gWritten = 0; }
+    os_unfair_lock_unlock(&gWriteLock);
 }
 
 + (WAMLogLevel)level {

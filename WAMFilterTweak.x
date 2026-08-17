@@ -313,7 +313,10 @@ static void wamfEnsureDarwinObservers(void) {
 - (void)viewDidLoad {
     %orig;
     wamfEnsureDarwinObservers();
-    WAMLog(@"life", @"viewDidLoad %@ navItem=%p", NSStringFromClass([self class]), self.navigationItem);
+    WAMLog(@"life", @"viewDidLoad %@ navItem=%p filterButtonEnabled=%d activeFilter=%@",
+           NSStringFromClass([self class]), self.navigationItem,
+           (int)[WAMFilterStore filterButtonEnabled],
+           [WAMFilterStore describeFilter:[WAMFilterStore activeFilter]]);
     [self wamfInstallFilterButton];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -335,10 +338,22 @@ static void wamfEnsureDarwinObservers(void) {
     // Safety net: if Messages swapped in a brand new UINavigationItem, the setter
     // hook has nothing marked to reinject into, so re-install from scratch.
     UINavigationItem *nav = self.navigationItem;
-    if (nav && [WAMFilterStore filterButtonEnabled] && ![nav wamfHasFilterItem]) {
-        WAMLog(@"nav", @"layout self-heal: button missing (owned=%d) -- reinstalling",
-                (int)[nav wamfIsOwned]);
-        [self wamfInstallFilterButton];
+    if (nav) {
+        BOOL enabled = [WAMFilterStore filterButtonEnabled];
+        BOOL present = [nav wamfHasFilterItem];
+
+        // Heartbeat so silence is never ambiguous: if the button is absent we
+        // want to know whether it is because prefs disabled it or because
+        // something stripped it.
+        WAMLogEvery(3.0, @"nav", @"layout state: enabled=%d present=%d owned=%d items=%@",
+                    (int)enabled, (int)present, (int)[nav wamfIsOwned],
+                    [nav wamfDescribeRightItems]);
+
+        if (enabled && !present) {
+            WAMLog(@"nav", @"layout self-heal: button missing (owned=%d) -- reinstalling",
+                   (int)[nav wamfIsOwned]);
+            [self wamfInstallFilterButton];
+        }
     }
 
     [self wamfCompactFilteredCells];
@@ -388,6 +403,9 @@ static void wamfEnsureDarwinObservers(void) {
 
     BOOL enabled = [WAMFilterStore filterButtonEnabled];
     NSString *before = [item wamfDescribeRightItems];
+    WAMLog(@"nav", @"install attempt: enabled=%d navItem=%p owned=%d hasItem=%d before=%@",
+           (int)enabled, item, (int)[item wamfIsOwned],
+           (int)[item wamfHasFilterItem], before);
 
     NSMutableArray *items = [(item.rightBarButtonItems ?: @[]) mutableCopy];
     NSUInteger removed = 0;
