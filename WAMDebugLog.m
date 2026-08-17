@@ -4,6 +4,9 @@
 #import <fcntl.h>
 #import <unistd.h>
 #import <sys/stat.h>
+#import <sys/time.h>
+#import <time.h>
+#import <string.h>
 #import <stdlib.h>
 #import <sys/syslimits.h>
 
