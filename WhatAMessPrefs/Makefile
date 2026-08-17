@@ -21,7 +21,8 @@ WhatAMessPrefs_FILES = WAMRootListController.m \
 					../WAMDebugLog.m \
 					../WAMFilterModel.m \
 					../WAMManageFilteringController.m \
-					../WAMFilterLogViewController.m
+					../WAMFilterLogViewController.m \
+					../WAMFilterResultsController.m
 
 WhatAMessPrefs_FRAMEWORKS = UIKit UniformTypeIdentifiers
 WhatAMessPrefs_PRIVATE_FRAMEWORKS = Preferences

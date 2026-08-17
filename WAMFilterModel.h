@@ -5,6 +5,7 @@
 
 typedef NS_ENUM(NSInteger, WAMFilter) {
     WAMFilterAllMessages             = 0,
+    WAMFilterInbox                   = 10,
     WAMFilterUnknownSenders          = 1,
     WAMFilterTwoFactor               = 2,
     WAMFilterTransactions            = 3,

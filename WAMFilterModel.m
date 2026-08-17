@@ -197,6 +197,23 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 + (BOOL)filter:(WAMFilter)active matchesEffective:(WAMFilter)effective {
     if (active == WAMFilterAllMessages) return YES;
 
+    // Inbox: real conversations only. Everything the classifier or the user has
+    // marked as transactional, 2FA, promotional or spam is excluded.
+    if (active == WAMFilterInbox) {
+        switch (effective) {
+            case WAMFilterTwoFactor:
+            case WAMFilterTransactions:
+            case WAMFilterTransactionsOrders:
+            case WAMFilterTransactionsFinance:
+            case WAMFilterTransactionsReminders:
+            case WAMFilterPromotions:
+            case WAMFilterSpam:
+                return NO;
+            default:
+                return YES;
+        }
+    }
+
     if (active == WAMFilterTransactions) {
         return (effective == WAMFilterTransactions ||
                 effective == WAMFilterTransactionsOrders ||
@@ -312,6 +329,7 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 + (NSString *)nameForFilter:(WAMFilter)filter {
     switch (filter) {
         case WAMFilterAllMessages:           return @"Messages";
+        case WAMFilterInbox:                 return @"Inbox";
         case WAMFilterUnknownSenders:        return @"Unknown Senders";
         case WAMFilterTwoFactor:             return @"2FA";
         case WAMFilterTransactions:          return @"Transactions";
@@ -329,6 +347,7 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 + (NSString *)symbolForFilter:(WAMFilter)filter {
     switch (filter) {
         case WAMFilterAllMessages:           return @"message";
+        case WAMFilterInbox:                 return @"tray";
         case WAMFilterUnknownSenders:        return @"person.crop.circle.badge.questionmark";
         case WAMFilterTwoFactor:             return @"lock.shield";
         case WAMFilterTransactions:          return @"tag";

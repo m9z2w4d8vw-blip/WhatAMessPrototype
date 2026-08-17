@@ -1,19 +1,16 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
+#import <stdlib.h>
 #import "WAMFilterModel.h"
 #import "WAMDebugLog.h"
 #import "WAMManageFilteringController.h"
+#import "WAMFilterResultsController.h"
 
 #define kWAMFilterButtonTag 0x57414D46
-#define kWAMEmptyStateTag   0x57414D45
 
-static BOOL gWAMFCompacting = NO;
 static BOOL gWAMFReinjecting = NO;
-static BOOL gWAMFDidCompact = NO;
-static const void *kWAMFCanonRectKey  = &kWAMFCanonRectKey;
 static const void *kWAMFTitleKey      = &kWAMFTitleKey;
 static const void *kWAMFOwnedNavKey   = &kWAMFOwnedNavKey;
-static const void *kWAMFLastShownKey  = &kWAMFLastShownKey;
 
 static NSUInteger gWAMFInstallCount = 0;
 static NSUInteger gWAMFReinjectCount = 0;
@@ -24,8 +21,8 @@ static NSUInteger gWAMFReinjectCount = 0;
 - (void)wamfSelectFilter:(NSNumber *)boxed;
 - (void)wamfOpenManageFiltering;
 - (void)wamfOpenRecentlyDeleted;
-- (void)wamfCompactFilteredCells;
 - (void)wamfRefreshForFilterChange;
+- (void)wamfDumpRuntimeShape;
 @end
 
 @interface UINavigationItem (WAMFilter)
@@ -248,48 +245,15 @@ static void wamfEnsureDarwinObservers(void) {
 
 %new
 - (void)wamfApplyFilterVisibility {
-    WAMFilter active = [WAMFilterStore activeFilter];
-
+    // Roster recording only. Hiding cells and rewriting their frames does not
+    // work: the collection view owns geometry and recycles cells, so anything
+    // written here is reverted on the next layout pass. Filtering has to happen
+    // at the data source; see wamfDumpRuntimeShape.
     NSString *title = [self wamfExtractTitle];
-    if (title.length) {
-        objc_setAssociatedObject(self, kWAMFTitleKey, title, OBJC_ASSOCIATION_COPY_NONATOMIC);
-        [WAMFilterStore recordSenderTitle:title preview:[self wamfExtractPreview]];
-    } else {
-        title = objc_getAssociatedObject(self, kWAMFTitleKey);
-    }
+    if (!title.length) return;
 
-    if (active == WAMFilterAllMessages || ![WAMFilterStore filterButtonEnabled]) {
-        if (self.hidden) {
-            self.hidden = NO;
-            self.userInteractionEnabled = YES;
-        }
-        return;
-    }
-
-    BOOL show = title.length ? [WAMFilterStore shouldShowTitle:title underFilter:active] : NO;
-
-    NSNumber *last = objc_getAssociatedObject(self, kWAMFLastShownKey);
-    if (!last || last.boolValue != show) {
-        objc_setAssociatedObject(self, kWAMFLastShownKey, @(show), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-        WAMLog(@"cell", @"%@ title=%@ effective=%@ under=%@",
-                show ? @"SHOW" : @"HIDE",
-                title ?: @"(none)",
-                [WAMFilterStore describeFilter:[WAMFilterStore effectiveFilterForTitle:title]],
-                [WAMFilterStore describeFilter:active]);
-    }
-
-    if (self.hidden != !show) {
-        self.hidden = !show;
-        self.userInteractionEnabled = show;
-    }
-}
-
-- (void)setFrame:(CGRect)frame {
-    if (!gWAMFCompacting && frame.size.height > 1) {
-        objc_setAssociatedObject(self, kWAMFCanonRectKey,
-            [NSValue valueWithCGRect:frame], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
-    }
-    %orig;
+    objc_setAssociatedObject(self, kWAMFTitleKey, title, OBJC_ASSOCIATION_COPY_NONATOMIC);
+    [WAMFilterStore recordSenderTitle:title preview:[self wamfExtractPreview]];
 }
 
 - (void)layoutSubviews {
@@ -300,8 +264,6 @@ static void wamfEnsureDarwinObservers(void) {
 - (void)prepareForReuse {
     %orig;
     objc_setAssociatedObject(self, kWAMFTitleKey, nil, OBJC_ASSOCIATION_COPY_NONATOMIC);
-    self.hidden = NO;
-    self.userInteractionEnabled = YES;
 }
 
 %end
@@ -323,6 +285,11 @@ static void wamfEnsureDarwinObservers(void) {
         selector:@selector(wamfRefreshForFilterChange)
             name:@"WAMFilterChangedInProcess"
           object:nil];
+}
+
+- (void)viewDidAppear:(BOOL)animated {
+    %orig;
+    [self wamfDumpRuntimeShape];
 }
 
 - (void)viewWillAppear:(BOOL)animated {
@@ -355,8 +322,6 @@ static void wamfEnsureDarwinObservers(void) {
             [self wamfInstallFilterButton];
         }
     }
-
-    [self wamfCompactFilteredCells];
 }
 
 - (void)dealloc {
@@ -367,30 +332,90 @@ static void wamfEnsureDarwinObservers(void) {
 %new
 - (void)wamfRefreshForFilterChange {
     WAMLog(@"life", @"refreshForFilterChange filter=%@",
-            [WAMFilterStore describeFilter:[WAMFilterStore activeFilter]]);
+           [WAMFilterStore describeFilter:[WAMFilterStore activeFilter]]);
     [self wamfInstallFilterButton];
+}
 
-    UICollectionView *cv = self.collectionView;
-    if (!cv) return;
+%new
+- (void)wamfDumpRuntimeShape {
+    static dispatch_once_t once;
+    dispatch_once(&once, ^{
+        UICollectionView *cv = self.collectionView;
 
-    gWAMFCompacting = YES;
-    for (UIView *v in cv.subviews) {
-        if (![v isKindOfClass:%c(CKConversationListCollectionViewConversationCell)]) continue;
-        NSValue *canon = objc_getAssociatedObject(v, kWAMFCanonRectKey);
-        if (canon) v.frame = [canon CGRectValue];
-        v.hidden = NO;
-        v.userInteractionEnabled = YES;
-    }
-    gWAMFCompacting = NO;
+        WAMLog(@"shape", @"controller=%@", NSStringFromClass([self class]));
+        WAMLog(@"shape", @"collectionView=%@ dataSource=%@ delegate=%@ layout=%@",
+               cv ? NSStringFromClass([cv class]) : @"(nil)",
+               cv.dataSource ? NSStringFromClass([cv.dataSource class]) : @"(nil)",
+               cv.delegate ? NSStringFromClass([cv.delegate class]) : @"(nil)",
+               cv.collectionViewLayout ? NSStringFromClass([cv.collectionViewLayout class]) : @"(nil)");
+        WAMLog(@"shape", @"sections=%ld items0=%ld",
+               (long)(cv ? [cv numberOfSections] : -1),
+               (long)(cv && [cv numberOfSections] > 0 ? [cv numberOfItemsInSection:0] : -1));
 
-    for (UIView *v in cv.subviews) {
-        if ([v isKindOfClass:%c(CKConversationListCollectionViewConversationCell)]) {
-            [(CKConversationListCollectionViewConversationCell *)v wamfApplyFilterVisibility];
+        NSArray *needles = @[@"conversation", @"chat", @"datasource", @"snapshot", @"item",
+                             @"filter", @"list", @"reload", @"cell", @"unknown", @"pinned"];
+
+        // Every ivar on the controller: this is where the conversation array lives.
+        unsigned int ivarCount = 0;
+        Ivar *ivars = class_copyIvarList([self class], &ivarCount);
+        NSMutableArray *ivarNames = [NSMutableArray array];
+        for (unsigned int i = 0; i < ivarCount; i++) {
+            const char *nm = ivar_getName(ivars[i]);
+            const char *ty = ivar_getTypeEncoding(ivars[i]);
+            [ivarNames addObject:[NSString stringWithFormat:@"%s:%s", nm ?: "?", ty ?: "?"]];
         }
-    }
+        if (ivars) free(ivars);
+        WAMLog(@"shape", @"controller ivars (%u): %@",
+               ivarCount, [ivarNames componentsJoinedByString:@" "]);
 
-    [self wamfCompactFilteredCells];
-    [cv setNeedsLayout];
+        // Controller methods matching anything conversation-shaped.
+        unsigned int mCount = 0;
+        Method *methods = class_copyMethodList([self class], &mCount);
+        NSMutableArray *hits = [NSMutableArray array];
+        for (unsigned int i = 0; i < mCount; i++) {
+            NSString *sel = NSStringFromSelector(method_getName(methods[i]));
+            NSString *lower = [sel lowercaseString];
+            for (NSString *n in needles) {
+                if ([lower rangeOfString:n].location != NSNotFound) {
+                    [hits addObject:sel];
+                    break;
+                }
+            }
+        }
+        if (methods) free(methods);
+        WAMLog(@"shape", @"controller methods %u total, %lu interesting:",
+               mCount, (unsigned long)hits.count);
+        for (NSString *sel in hits) {
+            WAMLog(@"shape", @"  ctrl -[%@]", sel);
+        }
+
+        // If the data source is a separate object (diffable, etc.), dump it too.
+        id ds = cv.dataSource;
+        if (ds && ds != self) {
+            unsigned int dCount = 0;
+            Method *dMethods = class_copyMethodList([ds class], &dCount);
+            NSMutableArray *dHits = [NSMutableArray array];
+            for (unsigned int i = 0; i < dCount; i++) {
+                [dHits addObject:NSStringFromSelector(method_getName(dMethods[i]))];
+            }
+            if (dMethods) free(dMethods);
+            WAMLog(@"shape", @"dataSource %@ methods (%u): %@",
+                   NSStringFromClass([ds class]), dCount,
+                   [dHits componentsJoinedByString:@" "]);
+
+            unsigned int dIvarCount = 0;
+            Ivar *dIvars = class_copyIvarList([ds class], &dIvarCount);
+            NSMutableArray *dIvarNames = [NSMutableArray array];
+            for (unsigned int i = 0; i < dIvarCount; i++) {
+                [dIvarNames addObject:@(ivar_getName(dIvars[i]) ?: "?")];
+            }
+            if (dIvars) free(dIvars);
+            WAMLog(@"shape", @"dataSource ivars (%u): %@",
+                   dIvarCount, [dIvarNames componentsJoinedByString:@" "]);
+        }
+
+        WAMLog(@"shape", @"---- end runtime shape ----");
+    });
 }
 
 %new
@@ -500,6 +525,7 @@ static void wamfEnsureDarwinObservers(void) {
 
     NSArray *top = @[
         make(WAMFilterAllMessages),
+        make(WAMFilterInbox),
         make(WAMFilterUnknownSenders),
         transactions,
         make(WAMFilterTwoFactor),
@@ -519,11 +545,19 @@ static void wamfEnsureDarwinObservers(void) {
 
 %new
 - (void)wamfSelectFilter:(NSNumber *)boxed {
-    WAMLog(@"menu", @"user picked %@",
-            [WAMFilterStore describeFilter:(WAMFilter)[boxed integerValue]]);
-    [WAMFilterStore setActiveFilter:(WAMFilter)[boxed integerValue]];
+    WAMFilter picked = (WAMFilter)[boxed integerValue];
+    WAMLog(@"menu", @"user picked %@", [WAMFilterStore describeFilter:picked]);
+
+    [WAMFilterStore setActiveFilter:picked];
     [WAMFilterStore postFilterChanged];
     [self wamfRefreshForFilterChange];
+
+    // Messages means the untouched native list. Anything else opens a sheet,
+    // because in-place filtering needs the data source and that is not wired yet.
+    if (picked == WAMFilterAllMessages) return;
+
+    UINavigationController *nav = [WAMFilterResultsController wrappedForFilter:picked];
+    [self presentViewController:nav animated:YES completion:nil];
 }
 
 %new
@@ -563,115 +597,6 @@ static void wamfEnsureDarwinObservers(void) {
                   preferredStyle:UIAlertControllerStyleAlert];
     [a addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];
     [self presentViewController:a animated:YES completion:nil];
-}
-
-%new
-- (void)wamfCompactFilteredCells {
-    UICollectionView *cv = self.collectionView;
-    if (!cv) return;
-
-    Class cellCls = %c(CKConversationListCollectionViewConversationCell);
-    if (!cellCls) return;
-
-    WAMFilter active = [WAMFilterStore activeFilter];
-    BOOL filtering = ([WAMFilterStore filterButtonEnabled] && active != WAMFilterAllMessages);
-
-    NSMutableArray<UIView *> *cells = [NSMutableArray array];
-    for (UIView *v in cv.subviews) {
-        if ([v isKindOfClass:cellCls]) [cells addObject:v];
-    }
-
-    UILabel *empty = (UILabel *)[self.view viewWithTag:kWAMEmptyStateTag];
-
-    if (!filtering) {
-        if (!gWAMFDidCompact) {
-            empty.hidden = YES;
-            return;
-        }
-        gWAMFDidCompact = NO;
-        WAMLog(@"compact", @"filter cleared -- restoring %lu canonical frames",
-               (unsigned long)cells.count);
-        if (cells.count) {
-            gWAMFCompacting = YES;
-            for (UIView *cell in cells) {
-                NSValue *canon = objc_getAssociatedObject(cell, kWAMFCanonRectKey);
-                if (canon && !CGRectEqualToRect(cell.frame, [canon CGRectValue])) {
-                    cell.frame = [canon CGRectValue];
-                }
-            }
-            gWAMFCompacting = NO;
-        }
-        empty.hidden = YES;
-        return;
-    }
-
-    [cells sortUsingComparator:^NSComparisonResult(UIView *a, UIView *b) {
-        NSValue *va = objc_getAssociatedObject(a, kWAMFCanonRectKey);
-        NSValue *vb = objc_getAssociatedObject(b, kWAMFCanonRectKey);
-        CGFloat ya = va ? [va CGRectValue].origin.y : a.frame.origin.y;
-        CGFloat yb = vb ? [vb CGRectValue].origin.y : b.frame.origin.y;
-        if (ya < yb) return NSOrderedAscending;
-        if (ya > yb) return NSOrderedDescending;
-        return NSOrderedSame;
-    }];
-
-    CGFloat cursor = CGFLOAT_MAX;
-    for (UIView *cell in cells) {
-        NSValue *canon = objc_getAssociatedObject(cell, kWAMFCanonRectKey);
-        if (!canon) continue;
-        cursor = MIN(cursor, [canon CGRectValue].origin.y);
-    }
-    if (cursor == CGFLOAT_MAX) return;
-
-    NSInteger shown = 0;
-    gWAMFDidCompact = YES;
-    gWAMFCompacting = YES;
-    for (UIView *cell in cells) {
-        NSValue *canon = objc_getAssociatedObject(cell, kWAMFCanonRectKey);
-        if (!canon) continue;
-        CGRect r = [canon CGRectValue];
-        if (cell.hidden) continue;
-        r.origin.y = cursor;
-        if (!CGRectEqualToRect(cell.frame, r)) cell.frame = r;
-        cursor += r.size.height;
-        shown++;
-    }
-    gWAMFCompacting = NO;
-
-    static NSInteger prevShown = -1;
-    static NSInteger prevTotal = -1;
-    if (shown != prevShown || (NSInteger)cells.count != prevTotal) {
-        prevShown = shown;
-        prevTotal = (NSInteger)cells.count;
-        WAMLog(@"compact", @"filter=%@ cells=%lu shown=%ld startY=%.1f",
-                [WAMFilterStore describeFilter:active],
-                (unsigned long)cells.count, (long)shown, cursor);
-    }
-
-    if (shown == 0) {
-        if (!empty) {
-            empty = [[UILabel alloc] init];
-            empty.tag = kWAMEmptyStateTag;
-            empty.numberOfLines = 0;
-            empty.textAlignment = NSTextAlignmentCenter;
-            empty.font = [UIFont systemFontOfSize:15];
-            empty.textColor = [UIColor secondaryLabelColor];
-            empty.translatesAutoresizingMaskIntoConstraints = NO;
-            [self.view addSubview:empty];
-            [NSLayoutConstraint activateConstraints:@[
-                [empty.centerXAnchor constraintEqualToAnchor:self.view.centerXAnchor],
-                [empty.centerYAnchor constraintEqualToAnchor:self.view.centerYAnchor constant:-40],
-                [empty.widthAnchor constraintEqualToAnchor:self.view.widthAnchor multiplier:0.72],
-            ]];
-        }
-        empty.text = [NSString stringWithFormat:
-            @"Nothing loaded in %@.\n\nScroll the list to load more conversations, or assign senders "
-             "to this filter in Manage Filtering.", [WAMFilterStore nameForFilter:active]];
-        empty.hidden = NO;
-        [self.view bringSubviewToFront:empty];
-    } else {
-        empty.hidden = YES;
-    }
 }
 
 %end
