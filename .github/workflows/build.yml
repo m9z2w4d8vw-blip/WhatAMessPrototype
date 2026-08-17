@@ -1,0 +1,103 @@
+name: Build and release
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build rootless deb
+    runs-on: ubuntu-22.04
+
+    env:
+      THEOS: ${{ github.workspace }}/../theos
+      THEOS_PACKAGE_SCHEME: rootless
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential fakeroot git perl curl zsh unzip rsync xz-utils \
+            libtinfo5 ldid
+
+      - name: Cache Theos
+        id: cache-theos
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../theos
+          key: theos-ubuntu2204-swift55-v1
+
+      - name: Set up Theos
+        if: steps.cache-theos.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+
+          # Linux cross toolchain (clang capable of targeting arm64 iOS)
+          curl -fsSL -o /tmp/toolchain.tar.xz \
+            https://github.com/kabiroberai/swift-toolchain-linux/releases/download/v2.2.0/swift-5.5-ubuntu20.04.tar.xz
+          mkdir -p "$THEOS/toolchain/linux/iphone"
+          tar -xf /tmp/toolchain.tar.xz -C "$THEOS/toolchain/linux/iphone" --strip-components=1
+          rm -f /tmp/toolchain.tar.xz
+
+          # Pull exactly one iOS SDK instead of the whole multi-gigabyte repo
+          git clone --filter=blob:none --sparse --depth 1 \
+            https://github.com/theos/sdks.git /tmp/sdks
+          cd /tmp/sdks
+          SDK=$(git ls-tree --name-only HEAD | grep -E '^iPhoneOS1[5-9]\.[0-9]+\.sdk$' | sort -V | tail -1)
+          echo "Selected SDK: $SDK"
+          git sparse-checkout set "$SDK"
+          mkdir -p "$THEOS/sdks"
+          mv "/tmp/sdks/$SDK" "$THEOS/sdks/"
+          cd /
+          rm -rf /tmp/sdks
+
+      - name: Show toolchain versions
+        run: |
+          "$THEOS/toolchain/linux/iphone/bin/clang" --version || true
+          ls "$THEOS/sdks"
+
+      - name: Build package
+        run: make package FINALPACKAGE=1
+
+      - name: Locate deb
+        id: deb
+        run: |
+          DEB=$(ls -1 packages/*.deb | head -n 1)
+          echo "path=$DEB" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$DEB")" >> "$GITHUB_OUTPUT"
+          echo "Built $DEB"
+          dpkg-deb -I "$DEB" || true
+          dpkg-deb -c "$DEB" || true
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.deb.outputs.name }}
+          path: packages/*.deb
+          if-no-files-found: error
+
+      - name: Publish release
+        if: github.event_name != 'pull_request'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: WhatAMess Filter Prototype (build ${{ github.run_number }})
+          body: |
+            Rootless build of the WhatAMess filter prototype.
+
+            Built from `${{ github.sha }}`.
+
+            Install the `.deb` with Sileo or `dpkg -i`, then respring or use
+            Kill Messages in the tweak settings.
+          files: packages/*.deb
+          fail_on_unmatched_files: true

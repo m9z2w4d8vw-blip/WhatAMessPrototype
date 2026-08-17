@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>items</key>
+	<array>
+		<dict>
+            <key>cell</key>
+            <string>PSGroupCell</string>
+            <key>label</key>
+            <string>Light/Dark Mode Editing Selection</string>
+            <key>footerText</key>
+            <string>Select which mode's colors to edit. Dark and light selections are stored using the same option.</string>
+        </dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSegmentCell</string>
+			<key>key</key>
+			<string>editingDarkMode</string>
+			<key>defaults</key>
+			<string>com.oakstheawesome.whatamessprefs</string>
+			<key>label</key>
+			<string>Editing Mode</string>
+			<key>validTitles</key>
+			<array>
+				<string>Light</string>
+				<string>Dark</string>
+			</array>
+			<key>validValues</key>
+			<array>
+				<false/>
+				<true/>
+			</array>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Gradient Background</string>
+			<key>footerText</key>
+			<string>Create a color gradient to set as the chat background. Up to five colors.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>Create Gradient Background</string>
+			<key>action</key>
+			<string>createChatGradient</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Image Background</string>
+			<key>footerText</key>
+			<string>Pick a photo instead. This slider controls the blur of the image.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>label</key>
+			<string>Enable Image Background</string>
+			<key>lightModeKey</key>
+			<string>isChatImageBgEnabled</string>
+			<key>default</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>Pick Background Image</string>
+			<key>action</key>
+			<string>pickChatBgImage</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSliderCell</string>
+			<key>label</key>
+			<string>Image Blur Amount</string>
+			<key>lightModeKey</key>
+			<string>chatImageBlurAmount</string>
+			<key>default</key>
+			<real>0</real>
+			<key>min</key>
+			<real>0</real>
+			<key>max</key>
+			<real>100</real>
+			<key>showValue</key>
+			<true/>
+			<key>isSegmented</key>
+			<false/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Message Bubbles</string>
+			<key>footerText</key>
+			<string>Settings to customize the message bubbles in chats.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>label</key>
+			<string>Chat Bubble Settings</string>
+			<key>detail</key>
+			<string>WAMChatBubbleController</string>
+			<key>isController</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Message Bar</string>
+			<key>footerText</key>
+			<string>Settings to customize the message bar.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSLinkCell</string>
+			<key>label</key>
+			<string>Message Bar Settings</string>
+			<key>detail</key>
+			<string>WAMMessageBarController</string>
+			<key>isController</key>
+			<true/>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Camera/App Drawer Buttons</string>
+			<key>footerText</key>
+			<string>Your mileage for these features may vary on iOS 17.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSwitchCell</string>
+			<key>default</key>
+			<false/>
+			<key>lightModeKey</key>
+			<string>isMessageBarButtonsEnabled</string>
+			<key>label</key>
+			<string>Enable Camera/App Drawer Tint</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>Camera/App Drawer Button Color</string>
+			<key>action</key>
+			<string>pickMessageBarButtonColor</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
+			<string>Misc.</string>
+			<key>footerText</key>
+			<string>Customize the color and text color of message link bubbles.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>Link Bubble Background Color</string>
+			<key>action</key>
+			<string>pickLinkPreviewBackgroundColor</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>Link Bubble Text</string>
+			<key>action</key>
+			<string>pickLinkPreviewTextColor</string>
+		</dict>
+	</array>
+	<key>title</key>
+	<string>Chat View Settings</string>
+</dict>
+</plist>

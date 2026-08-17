@@ -1,0 +1,10 @@
+Package: com.oakstheawesome.whatamess
+Name: WhatAMess (Filter Prototype)
+Version: 1.4.0
+Architecture: iphoneos-arm64
+Description: Messy, messy Messages. Prototype fork adding a conversation-list filter button.
+Depiction: https://github.com/m9z2w4d8vw-blip/WhatAMessPrototype
+Maintainer: OaksTheAwesome
+Author: OaksTheAwesome
+Section: Tweaks
+Depends: mobilesubstrate (>= 0.9.5000), firmware (>= 15.0)
