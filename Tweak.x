@@ -4686,7 +4686,10 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
         superview = superview.superview;
     }
 
-    if (!isInConversationCell) { %orig; return; }
+    if (!isInConversationCell) {
+        %orig;
+        return;
+    }
     %orig(getDateTimeTextColor());
 }
 
@@ -4891,7 +4894,10 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)addSubview:(UIView *)view {
-    if (!isTweakEnabled() || !isModernNavBarEnabled()) { %orig; return; }
+    if (!isTweakEnabled() || !isModernNavBarEnabled()) {
+        %orig;
+        return;
+    }
 
     BOOL hasOurBlur = NO;
     for (UIView *sub in self.subviews) {
@@ -4908,7 +4914,10 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)setAlpha:(CGFloat)alpha {
-    if (!isTweakEnabled() || isModernNavBarEnabled()) { %orig; return; }
+    if (!isTweakEnabled() || isModernNavBarEnabled()) {
+        %orig;
+        return;
+    }
     %orig;
 }
 
@@ -6421,7 +6430,10 @@ static void wamClearForeignBlur(UIView *g) {
 }
 
 - (void)setColors:(NSArray *)colors {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
 
     BOOL isReaction = wamIsInsideReactionContext(self, 8);
     if (isReaction) {
@@ -6460,7 +6472,10 @@ static void wamClearForeignBlur(UIView *g) {
     }
     if (!isBlurBubblesEnabled()) wamClearForeignBlur(self);
 
-    if (!isCustomBubbleColorsEnabled()) { %orig; return; }
+    if (!isCustomBubbleColorsEnabled()) {
+        %orig;
+        return;
+    }
 
     UIColor *bubbleColor = (col == 0) ? getSMSSentBubbleColor()
                          : (col == -1) ? getReceivedBubbleColor()
@@ -6763,7 +6778,10 @@ static void wamStripOurBlurs(UIView *balloon) {
 }
 
 - (void)setImage:(UIImage *)image {
-    if (!isTweakEnabled() || !image) { %orig; return; }
+    if (!isTweakEnabled() || !image) {
+        %orig;
+        return;
+    }
 
     image = wamRestoreBalloonAlpha(image);
 
@@ -6893,10 +6911,16 @@ static BOOL wamReplyPreviewIsFromMe(UIView *v) {
 }
 
 - (void)setTextColor:(UIColor *)textColor {
-    if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) { %orig; return; }
+    if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) {
+        %orig;
+        return;
+    }
 
     NSNumber *isUpdating = objc_getAssociatedObject(self, @selector(setTextColor:));
-    if (isUpdating && [isUpdating boolValue]) { %orig; return; }
+    if (isUpdating && [isUpdating boolValue]) {
+        %orig;
+        return;
+    }
 
     UIColor *customTextColor = [self getCustomTextColor];
     if (customTextColor && ![textColor isEqual:customTextColor]) {
@@ -6909,10 +6933,16 @@ static BOOL wamReplyPreviewIsFromMe(UIView *v) {
 }
 
 - (void)setTintColor:(UIColor *)tintColor {
-    if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) { %orig; return; }
+    if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) {
+        %orig;
+        return;
+    }
 
     NSNumber *isUpdating = objc_getAssociatedObject(self, @selector(setTintColor:));
-    if (isUpdating && [isUpdating boolValue]) { %orig; return; }
+    if (isUpdating && [isUpdating boolValue]) {
+        %orig;
+        return;
+    }
 
     UIColor *customTextColor = [self getCustomTextColor];
     if (customTextColor && ![tintColor isEqual:customTextColor]) {
@@ -6994,19 +7024,34 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook CALayer
 
 - (void)setContents:(id)contents {
-    if (!isTweakEnabled() || !isCustomBubbleColorsEnabled() || !contents) { %orig; return; }
+    if (!isTweakEnabled() || !isCustomBubbleColorsEnabled() || !contents) {
+        %orig;
+        return;
+    }
     Class replyCls = objc_getClass("CKTextReplyPreviewBalloonView");
     id dg = self.delegate;
     if (!replyCls || ![dg isKindOfClass:replyCls] ||
-        CFGetTypeID((__bridge CFTypeRef)contents) != CGImageGetTypeID()) { %orig; return; }
+        CFGetTypeID((__bridge CFTypeRef)contents) != CGImageGetTypeID()) {
+            %orig;
+            return;
+        }
 
     static const char kWAMReTintingKey = 0;
-    if ([objc_getAssociatedObject(self, &kWAMReTintingKey) boolValue]) { %orig; return; }
+    if ([objc_getAssociatedObject(self, &kWAMReTintingKey) boolValue]) {
+        %orig;
+        return;
+    }
 
     UIColor *c = wamReplyPreviewIsFromMe((UIView *)dg) ? getSentBubbleColor() : getReceivedBubbleColor();
-    if (!c) { %orig; return; }
+    if (!c) {
+        %orig;
+        return;
+    }
     CGImageRef tinted = wamTintTemplateImage((__bridge CGImageRef)contents, c);
-    if (!tinted) { %orig; return; }
+    if (!tinted) {
+        %orig;
+        return;
+    }
     objc_setAssociatedObject(self, &kWAMReTintingKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     %orig((__bridge id)tinted);
     objc_setAssociatedObject(self, &kWAMReTintingKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -7373,7 +7418,10 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled() || !isModernMessageBarEnabled()) { %orig; return; }
+    if (!isTweakEnabled() || !isModernMessageBarEnabled()) {
+        %orig;
+        return;
+    }
 
     UIView *parent = self.superview;
     BOOL isInMessageInput = NO;
@@ -7400,7 +7448,10 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
         levels++;
     }
 
-    if (isInAudioRecording && isiOS15()) { %orig; return; }
+    if (isInAudioRecording && isiOS15()) {
+        %orig;
+        return;
+    }
     if (isInMessageInput && !isInKeyboard) {
         %orig([UIColor clearColor]);
         return;
@@ -7447,7 +7498,10 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled() || !isModernMessageBarEnabled()) { %orig; return; }
+    if (!isTweakEnabled() || !isModernMessageBarEnabled()) {
+        %orig;
+        return;
+    }
 
     UIView *parent = self.superview;
     BOOL isInMessageInput = NO;
@@ -7485,7 +7539,10 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook _UIVisualEffectSubview
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled() || !isModernMessageBarEnabled()) { %orig; return; }
+    if (!isTweakEnabled() || !isModernMessageBarEnabled()) {
+        %orig;
+        return;
+    }
 
     UIView *parent = self.superview;
     BOOL isInMessageInput = NO;
@@ -8565,7 +8622,10 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
 
     UIView *parent = self.superview;
     int levels = 0;
@@ -8682,7 +8742,10 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     %orig([UIColor clearColor]);
 }
 
@@ -8732,7 +8795,10 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     %orig([UIColor clearColor]);
 }
 
@@ -8752,7 +8818,10 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
-    if (%orig) return YES;
+    BOOL wamOrigInside = %orig;
+    if (wamOrigInside) {
+        return YES;
+    }
     if (!isTweakEnabled() || !isPerContactChatBgEnabled()) return NO;
     UITableViewCell *cell = (UITableViewCell *)self;
     UIView *host = [cell respondsToSelector:@selector(contentView)] ? cell.contentView : (UIView *)self;
@@ -9519,7 +9588,10 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     if (wamHasCustomChatBackdrop()) {
         %orig([UIColor clearColor]);
         return;
@@ -9606,10 +9678,19 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)setTextColor:(UIColor *)color {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     NSNumber *updating = objc_getAssociatedObject(self, &kWAMTableLabelUpdatingKey);
-    if (updating && [updating boolValue]) { %orig; return; }
-    if (wamLabelIsRedish(color)) { %orig; return; }
+    if (updating && [updating boolValue]) {
+        %orig;
+        return;
+    }
+    if (wamLabelIsRedish(color)) {
+        %orig;
+        return;
+    }
     UIColor *customTint = getAdvancedTableLabelColor();
     if (!(customTint && color && [color isEqual:customTint])) {
         objc_setAssociatedObject(self, &kWAMTableLabelOrigKey, color ?: (id)[NSNull null], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -9753,7 +9834,10 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)setTextColor:(UIColor *)color {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     if ([self.text isEqualToString:@"Report Junk"]) {
         UIColor *customTint = getChatAdvancedTintColorForView(@"advancedReportJunkColor", @"advancedReportJunkColorDark", getSystemTintColor(), self);
         if (customTint) {
@@ -9803,7 +9887,10 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 %hook UIButton
 
 - (void)setTintColor:(UIColor *)color {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     UIView *parent = self.superview;
     int levels = 0;
     while (parent && levels < 10) {
@@ -9995,9 +10082,15 @@ static UIColor *wamReactionBlurTint(UIView *c) {
 }
 
 - (void)setTintColor:(UIColor *)color {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     BOOL hasGlyphOverride = isAdvancedValueExplicitlySet(@"advancedReactionGlyphColor", @"advancedReactionGlyphColorDark");
-    if (!isCustomBubbleColorsEnabled() && !hasGlyphOverride) { %orig; return; }
+    if (!isCustomBubbleColorsEnabled() && !hasGlyphOverride) {
+        %orig;
+        return;
+    }
     UIColor *customTint = getAdvancedReactionGlyphColor();
     if (customTint) {
         %orig(customTint);
@@ -10172,7 +10265,10 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
         %orig;
         return;
     }
-    if (wamPlatterHostsAppExtension(self)) { %orig; return; }
+    if (wamPlatterHostsAppExtension(self)) {
+        %orig;
+        return;
+    }
     %orig(YES);
 }
 
@@ -10201,7 +10297,10 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
         %orig;
         return;
     }
-    if (wamPlatterHostsAppExtension(self)) { %orig; return; }
+    if (wamPlatterHostsAppExtension(self)) {
+        %orig;
+        return;
+    }
     %orig(YES);
 }
 
@@ -10230,7 +10329,10 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
         %orig;
         return;
     }
-    if (wamPlatterHostsAppExtension(self)) { %orig; return; }
+    if (wamPlatterHostsAppExtension(self)) {
+        %orig;
+        return;
+    }
     %orig(YES);
 }
 
@@ -10349,9 +10451,15 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook CKAcknowledgmentGlyphImageView
 
 - (void)setImage:(UIImage *)image {
-    if (!isTweakEnabled() || !image) { %orig; return; }
+    if (!isTweakEnabled() || !image) {
+        %orig;
+        return;
+    }
     BOOL hasGlyphOverride = isAdvancedValueExplicitlySet(@"advancedReactionGlyphColor", @"advancedReactionGlyphColorDark");
-    if (!isCustomBubbleColorsEnabled() && !hasGlyphOverride) { %orig; return; }
+    if (!isCustomBubbleColorsEnabled() && !hasGlyphOverride) {
+        %orig;
+        return;
+    }
 
     UIColor *glyphTint = getGlyphTintColor();
 
@@ -10439,7 +10547,10 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook UINavigationButton
 
 - (void)setTintColor:(UIColor *)color {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
 
     UIView *parent = self.superview;
     int levels = 0;
@@ -11272,7 +11383,10 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     if (isChatColorBgEnabled()) {
         %orig(getChatBackgroundColor());
     } else if (isChatImageBgEnabled()) {
@@ -11534,7 +11648,10 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     %orig([UIColor clearColor]);
 }
 
@@ -12113,9 +12230,15 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled() || !isiOS17OrHigher()) { %orig; return; }
+    if (!isTweakEnabled() || !isiOS17OrHigher()) {
+        %orig;
+        return;
+    }
     UIColor *customTint = getSystemTintColor();
-    if (!customTint) { %orig; return; }
+    if (!customTint) {
+        %orig;
+        return;
+    }
     %orig([self adjustedTintColor:customTint]);
 }
 
@@ -12513,7 +12636,10 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook LPFlippedView
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
-    if (!isTweakEnabled()) { %orig; return; }
+    if (!isTweakEnabled()) {
+        %orig;
+        return;
+    }
     if (isBlurBubblesEnabled()) {
         %orig([UIColor clearColor]);
         return;
@@ -12960,7 +13086,10 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook CKPinnedConversationActivityItemViewBackdropLayer
 
 - (void)setBackgroundColor:(CGColorRef)backgroundColor {
-    if (!isiOS15() || !WAMPinnedBubbleCurrentColor) { %orig; return; }
+    if (!isiOS15() || !WAMPinnedBubbleCurrentColor) {
+        %orig;
+        return;
+    }
     %orig(WAMPinnedBubbleCurrentColor.CGColor);
 }
 
