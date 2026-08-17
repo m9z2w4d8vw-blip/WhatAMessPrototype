@@ -53,6 +53,7 @@ static NSString * const kWAMGitHubURL = @"https://github.com/OaksTheAwesome/What
 
 static NSMutableDictionary *cachedPrefs = nil;
 static BOOL gWAMIsDarkModeOnIOS15 = NO;
+static BOOL gWAMUIReady = NO;
 static BOOL gWAMChangelogShownThisLaunch = NO;
 static NSString *gWAMCurrentContactName = nil;
 static NSString *gWAMCurrentContactDisplayName = nil;
@@ -684,11 +685,14 @@ static void reloadPrefs() {
         fromDisk = [NSMutableDictionary dictionaryWithContentsOfFile:kPrefsPlistPathRootfull];
     }
     cachedPrefs = (fromDisk && fromDisk.count > 0) ? fromDisk : [NSMutableDictionary new];
-    WAMLog(@"prefs", @"reloadPrefs: %lu keys from %@ (enabled=%d dark=%d)",
+    // NOTE: no UIKit here. reloadPrefs() is called from %ctor at dylib load,
+    // before UIApplicationMain, so isDarkMode() (UITraitCollection/UIScreen)
+    // would crash the app on launch.
+    WAMLog(@"prefs", @"reloadPrefs: %lu keys from %@ (enabled=%@ editingDark=%@)",
            (unsigned long)cachedPrefs.count,
            fromRootless ? @"rootless" : (fromDisk.count ? @"rootfull" : @"NOTHING"),
-           (int)[cachedPrefs[@"isEnabled"] boolValue],
-           (int)isDarkMode());
+           cachedPrefs[@"isEnabled"] ?: @"unset",
+           cachedPrefs[@"editingDarkMode"] ?: @"unset");
 }
 
 static void reloadPrefsAndNotify() {
@@ -13566,6 +13570,7 @@ static void wamKillMessagesCallback(CFNotificationCenterRef center, void *observ
 ============*/
 %ctor {
     [WAMDebugLog logEnvironment];
+    WAMLog(@"life", @"%%ctor: load-time phase, UIKit not yet safe to touch");
     WAMLog(@"life", @"%%ctor begin (WhatAMess %@)", kWAMTweakVersion);
     reloadPrefs();
 
@@ -13593,11 +13598,16 @@ static void wamKillMessagesCallback(CFNotificationCenterRef center, void *observ
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidBecomeActiveNotification
         object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
             gWAMMaskGeneration++;
+            if (!gWAMUIReady) {
+                gWAMUIReady = YES;
+                WAMLog(@"life", @"UIKit ready (first didBecomeActive); dark=%d", (int)isDarkMode());
+            }
         }];
     [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidReceiveMemoryWarningNotification
         object:nil queue:[NSOperationQueue mainQueue] usingBlock:^(NSNotification *n) {
             gWAMMaskGeneration++;
         }];
+    WAMLog(@"life", @"%%ctor end -- hooks installed, waiting for UI");
 }
 
 /* Made with love from the Show Me State. Support small content creators and local farmers! */

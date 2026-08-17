@@ -33,14 +33,33 @@ jobs:
           sudo apt-get install -y --no-install-recommends libtinfo5 || true
           sudo apt-get install -y --no-install-recommends libncurses5 || true
 
+      - name: Cache tools
+        id: cache-tools
+        uses: actions/cache@v4
+        with:
+          path: ${{ github.workspace }}/../tools
+          key: wam-tools-v1
+
       - name: Install ldid
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          TOOLS="$(cd "$GITHUB_WORKSPACE/.." && pwd)/tools"
+          mkdir -p "$TOOLS"
+          echo "$TOOLS" >> "$GITHUB_PATH"
+
+          if [ -x "$TOOLS/ldid" ]; then
+            echo "ldid restored from cache"
+            exit 0
+          fi
+
           # ldid is not an Ubuntu package; it comes from Procursus.
-          # Resolve the current release asset so a moved tag does not break the build.
-          URL=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+          # Retry aggressively: runner network blips are transient and a 134s
+          # connect timeout costs more than the whole rest of the job.
+          CURL="curl -fsSL --connect-timeout 15 --max-time 180 --retry 6 --retry-delay 5 --retry-all-errors"
+
+          URL=$($CURL -H "Authorization: Bearer $GH_TOKEN" \
                   https://api.github.com/repos/ProcursusTeam/ldid/releases/latest \
                 | grep -oE 'https://[^"]+/ldid_linux_x86_64' | head -n1 || true)
           if [ -z "$URL" ]; then
@@ -48,9 +67,9 @@ jobs:
             URL=https://github.com/ProcursusTeam/ldid/releases/download/v2.1.5-procursus7/ldid_linux_x86_64
           fi
           echo "Fetching $URL"
-          curl -fsSL -o /tmp/ldid "$URL"
-          sudo install -m 0755 /tmp/ldid /usr/local/bin/ldid
-          which ldid
+          $CURL -o "$TOOLS/ldid" "$URL"
+          chmod 0755 "$TOOLS/ldid"
+          ls -la "$TOOLS/ldid"
 
       - name: Cache Theos
         id: cache-theos
@@ -65,11 +84,24 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euxo pipefail
-          git clone --recursive --depth 1 https://github.com/theos/theos.git "$THEOS"
+
+          CURL="curl -fsSL --connect-timeout 15 --max-time 600 --retry 6 --retry-delay 5 --retry-all-errors"
+          retry_clone() {
+            target="$1"; shift
+            for attempt in 1 2 3; do
+              rm -rf "$target"
+              if git clone "$@" "$target"; then return 0; fi
+              echo "clone attempt $attempt failed; retrying in 10s"
+              sleep 10
+            done
+            return 1
+          }
+
+          retry_clone "$THEOS" --recursive --depth 1 https://github.com/theos/theos.git
 
           # Linux cross toolchain (clang capable of targeting arm64 iOS).
           # Resolve from the latest release, preferring a 22.04 build, then 20.04.
-          RAW=$(curl -fsSL -H "Authorization: Bearer $GH_TOKEN" \
+          RAW=$($CURL -H "Authorization: Bearer $GH_TOKEN" \
                   https://api.github.com/repos/kabiroberai/swift-toolchain-linux/releases/latest \
                 | grep -oE 'https://[^"]+\.tar\.xz' || true)
 
@@ -89,7 +121,7 @@ jobs:
           fi
           echo "Host arch: $(uname -m)"
           echo "Toolchain: $TC"
-          curl -fsSL -o /tmp/toolchain.tar.xz "$TC"
+          $CURL -o /tmp/toolchain.tar.xz "$TC"
 
           # The archive is already shaped as linux/{iphone,host}, which is exactly
           # what Theos expects under $THEOS/toolchain. Extract it whole -- both trees
@@ -128,8 +160,8 @@ jobs:
           "$CC" --version
 
           # Pull exactly one iOS SDK instead of the whole multi-gigabyte repo
-          git clone --filter=blob:none --sparse --depth 1 \
-            https://github.com/theos/sdks.git /tmp/sdks
+          retry_clone /tmp/sdks --filter=blob:none --sparse --depth 1 \
+            https://github.com/theos/sdks.git
           cd /tmp/sdks
           SDK=$(git ls-tree --name-only HEAD | grep -E '^iPhoneOS1[5-9]\.[0-9]+\.sdk$' | sort -V | tail -1)
           if [ -z "$SDK" ]; then

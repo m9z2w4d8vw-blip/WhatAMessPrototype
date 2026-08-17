@@ -18,16 +18,29 @@ static NSString *WAMFPrefsPath(void) {
         @"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs.plist"];
 }
 
+// These are read from -layoutSubviews of every conversation cell, so hitting
+// the plist each time meant dozens of synchronous disk reads per second while
+// scrolling. Cache in memory and invalidate explicitly.
+static NSMutableDictionary *gPrefsCache = nil;
+
+void WAMFilterInvalidatePrefsCache(void) {
+    gPrefsCache = nil;
+}
+
 static NSMutableDictionary *WAMFRead(void) {
-    NSMutableDictionary *d = [NSMutableDictionary dictionaryWithContentsOfFile:WAMFPrefsPath()];
-    if (!d.count) {
-        d = [NSMutableDictionary dictionaryWithContentsOfFile:
-             @"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs.plist"];
+    if (!gPrefsCache) {
+        NSMutableDictionary *d = [NSMutableDictionary dictionaryWithContentsOfFile:WAMFPrefsPath()];
+        if (!d.count) {
+            d = [NSMutableDictionary dictionaryWithContentsOfFile:
+                 @"/var/mobile/Library/Preferences/com.oakstheawesome.whatamessprefs.plist"];
+        }
+        gPrefsCache = d ?: [NSMutableDictionary new];
     }
-    return d ?: [NSMutableDictionary new];
+    return gPrefsCache;
 }
 
 static void WAMFWrite(NSDictionary *prefs) {
+    if (prefs != gPrefsCache) gPrefsCache = [prefs mutableCopy];
     NSString *path = WAMFPrefsPath();
     NSString *dir = [path stringByDeletingLastPathComponent];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
@@ -35,6 +48,7 @@ static void WAMFWrite(NSDictionary *prefs) {
     [prefs writeToFile:path atomically:YES];
 }
 
+static BOOL gRosterDirty = NO;
 static NSString *const kAssignmentsKey = @"filterAssignments";
 static NSString *const kRosterKey      = @"filterRoster";
 static NSString *const kActiveKey      = @"filterActiveSelection";
@@ -200,6 +214,13 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 
 #pragma mark - Roster
 
++ (void)flushPendingRoster {
+    if (!gRosterDirty) return;
+    gRosterDirty = NO;
+    WAMLog(@"store", @"flushing roster to disk");
+    WAMFWrite(WAMFRead());
+}
+
 + (void)recordSenderTitle:(NSString *)title preview:(NSString *)preview {
     NSString *k = [self keyForTitle:title];
     if (!k) return;
@@ -217,15 +238,27 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
         return;
     }
 
-    WAMLog(@"store", @"roster record key=%@ title=%@ preview=%@",
-            k, title, newPreview.length > 40 ? [newPreview substringToIndex:40] : newPreview);
+    WAMLogV(@"store", @"roster record key=%@ title=%@", k, title);
+
     roster[k] = @{
         @"title":   title ?: @"",
         @"preview": newPreview,
         @"seen":    @([NSDate timeIntervalSinceReferenceDate]),
     };
     p[kRosterKey] = roster;
-    WAMFWrite(p);
+
+    // Coalesce: a scroll touches many cells, and each disk write on the main
+    // thread is what made the list stutter.
+    gRosterDirty = YES;
+    static BOOL scheduled = NO;
+    if (!scheduled) {
+        scheduled = YES;
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(3.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            scheduled = NO;
+            [WAMFilterStore flushPendingRoster];
+        });
+    }
 }
 
 + (NSArray<NSDictionary *> *)roster {

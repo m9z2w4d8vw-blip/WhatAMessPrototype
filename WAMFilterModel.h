@@ -17,6 +17,8 @@ typedef NS_ENUM(NSInteger, WAMFilter) {
     WAMFilterUnassigned              = 100,
 };
 
+void WAMFilterInvalidatePrefsCache(void);
+
 @interface WAMFilterStore : NSObject
 
 + (BOOL)filterButtonEnabled;
@@ -36,6 +38,7 @@ typedef NS_ENUM(NSInteger, WAMFilter) {
 + (BOOL)shouldShowTitle:(NSString *)title underFilter:(WAMFilter)active;
 
 + (void)recordSenderTitle:(NSString *)title preview:(NSString *)preview;
++ (void)flushPendingRoster;
 + (NSArray<NSDictionary *> *)roster;
 + (NSInteger)countForFilter:(WAMFilter)filter;
 + (void)removeRosterEntryForTitle:(NSString *)title;

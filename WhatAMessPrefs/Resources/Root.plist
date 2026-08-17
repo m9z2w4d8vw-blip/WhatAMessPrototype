@@ -210,7 +210,7 @@
 			<key>label</key>
 			<string>Debugging</string>
 			<key>footerText</key>
-			<string>Normal traces lifecycle, preference writes, colour decisions and the first call of every hooked method, plus a summary of hook activity every five seconds. Verbose adds per-call detail. Firehose logs every call of all 439 instrumented hooks and will grow fast \u2014 use it briefly. View Log reads or shares the file.</string>
+			<string>Off by default. Normal traces lifecycle, preference writes and the first call of every hooked method, plus a hook activity summary every five seconds. Verbose adds per-call detail. Firehose logs every call of all 448 instrumented hooks and will grow fast, so use it briefly. Writes are synchronous so the last line before a crash survives.</string>
 		</dict>
 		<dict>
 			<key>cell</key>
@@ -220,7 +220,7 @@
 			<key>defaults</key>
 			<string>com.oakstheawesome.whatamessprefs</string>
 			<key>default</key>
-			<integer>1</integer>
+			<integer>0</integer>
 			<key>label</key>
 			<string>Log Level</string>
 			<key>validTitles</key>

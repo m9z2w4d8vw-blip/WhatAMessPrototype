@@ -9,6 +9,7 @@
 
 static BOOL gWAMFCompacting = NO;
 static BOOL gWAMFReinjecting = NO;
+static BOOL gWAMFDidCompact = NO;
 static const void *kWAMFCanonRectKey  = &kWAMFCanonRectKey;
 static const void *kWAMFTitleKey      = &kWAMFTitleKey;
 static const void *kWAMFOwnedNavKey   = &kWAMFOwnedNavKey;
@@ -565,6 +566,13 @@ static void wamfEnsureDarwinObservers(void) {
     UILabel *empty = (UILabel *)[self.view viewWithTag:kWAMEmptyStateTag];
 
     if (!filtering) {
+        if (!gWAMFDidCompact) {
+            empty.hidden = YES;
+            return;
+        }
+        gWAMFDidCompact = NO;
+        WAMLog(@"compact", @"filter cleared -- restoring %lu canonical frames",
+               (unsigned long)cells.count);
         if (cells.count) {
             gWAMFCompacting = YES;
             for (UIView *cell in cells) {
@@ -598,6 +606,7 @@ static void wamfEnsureDarwinObservers(void) {
     if (cursor == CGFLOAT_MAX) return;
 
     NSInteger shown = 0;
+    gWAMFDidCompact = YES;
     gWAMFCompacting = YES;
     for (UIView *cell in cells) {
         NSValue *canon = objc_getAssociatedObject(cell, kWAMFCanonRectKey);

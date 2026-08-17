@@ -1,6 +1,9 @@
 #import "WAMDebugLog.h"
 #import <UIKit/UIKit.h>
 #import <os/lock.h>
+#import <fcntl.h>
+#import <unistd.h>
+#import <sys/stat.h>
 #import <stdlib.h>
 #import <sys/syslimits.h>
 
@@ -43,7 +46,7 @@ static const unsigned long long kMaxBytes = 2 * 1024 * 1024;
 
 #pragma mark - Level, cached so the hot paths stay cheap
 
-static WAMLogLevel gLevel = WAMLogLevelNormal;
+static WAMLogLevel gLevel = WAMLogLevelOff;
 static NSTimeInterval gLevelCheckedAt = 0;
 
 void WAMLogInvalidateCache(void) {
@@ -55,7 +58,7 @@ WAMLogLevel WAMLogLevelCurrent(void) {
     if (now - gLevelCheckedAt > 2.0) {
         gLevelCheckedAt = now;
         id v = WAMDLReadPrefs()[kLevelKey];
-        gLevel = v ? (WAMLogLevel)[v integerValue] : WAMLogLevelNormal;
+        gLevel = v ? (WAMLogLevel)[v integerValue] : WAMLogLevelOff;
         if (gLevel < WAMLogLevelOff) gLevel = WAMLogLevelOff;
         if (gLevel > WAMLogLevelFirehose) gLevel = WAMLogLevelFirehose;
     }
@@ -64,58 +67,75 @@ WAMLogLevel WAMLogLevelCurrent(void) {
 
 #pragma mark - Writing
 
-static dispatch_queue_t WAMDLQueue(void) {
-    static dispatch_queue_t q;
-    static dispatch_once_t once;
-    dispatch_once(&once, ^{
-        q = dispatch_queue_create("com.oakstheawesome.whatamess.log", DISPATCH_QUEUE_SERIAL);
-    });
-    return q;
+
+static os_unfair_lock gWriteLock = OS_UNFAIR_LOCK_INIT;
+static int gLogFD = -1;
+static unsigned long long gWritten = 0;
+
+// Synchronous, append-mode write(2) on a cached descriptor.
+// This is deliberately NOT dispatch_async: if the process dies, anything still
+// sitting on a queue is lost, which is exactly the log you needed. A single
+// write syscall is also cheaper than reopening NSFileHandle per line.
+static void WAMDLOpenLocked(void) {
+    if (gLogFD >= 0) return;
+    NSString *path = WAMDLLogPath();
+    [[NSFileManager defaultManager] createDirectoryAtPath:[path stringByDeletingLastPathComponent]
+                             withIntermediateDirectories:YES attributes:nil error:nil];
+    gLogFD = open([path fileSystemRepresentation], O_WRONLY | O_CREAT | O_APPEND, 0644);
+    if (gLogFD >= 0) {
+        struct stat st;
+        gWritten = (fstat(gLogFD, &st) == 0) ? (unsigned long long)st.st_size : 0;
+    }
+}
+
+static void WAMDLRotateLocked(void) {
+    if (gLogFD >= 0) {
+        close(gLogFD);
+        gLogFD = -1;
+    }
+    NSString *path = WAMDLLogPath();
+    NSString *rotated = [path stringByAppendingString:@".1"];
+    NSFileManager *fm = [NSFileManager defaultManager];
+    [fm removeItemAtPath:rotated error:nil];
+    [fm moveItemAtPath:path toPath:rotated error:nil];
+    gWritten = 0;
+    WAMDLOpenLocked();
 }
 
 void WAMLogWrite(NSString *category, NSString *message) {
     if (!message) return;
 
-    static NSDateFormatter *fmt = nil;
     static NSString *proc = nil;
     static dispatch_once_t once;
     dispatch_once(&once, ^{
-        fmt = [NSDateFormatter new];
-        fmt.dateFormat = @"HH:mm:ss.SSS";
         proc = [NSProcessInfo processInfo].processName ?: @"?";
     });
 
-    NSString *line = [NSString stringWithFormat:@"%@ %@ [%@] %@\n",
-                      [fmt stringFromDate:[NSDate date]], proc, category ?: @"-", message];
+    // NSDateFormatter is not safe to share across threads; format the clock by hand.
+    struct timeval tv;
+    gettimeofday(&tv, NULL);
+    time_t secs = tv.tv_sec;
+    struct tm tmv;
+    localtime_r(&secs, &tmv);
+
+    NSString *line = [NSString stringWithFormat:@"%02d:%02d:%02d.%03d %@ [%@] %@\n",
+                      tmv.tm_hour, tmv.tm_min, tmv.tm_sec, (int)(tv.tv_usec / 1000),
+                      proc, category ?: @"-", message];
 
     NSLog(@"[WhatAMess][%@] %@", category ?: @"-", message);
 
-    dispatch_async(WAMDLQueue(), ^{
-        NSFileManager *fm = [NSFileManager defaultManager];
-        NSString *path = WAMDLLogPath();
-        [fm createDirectoryAtPath:[path stringByDeletingLastPathComponent]
-      withIntermediateDirectories:YES attributes:nil error:nil];
+    const char *bytes = [line UTF8String];
+    if (!bytes) return;
+    size_t len = strlen(bytes);
 
-        NSDictionary *attrs = [fm attributesOfItemAtPath:path error:nil];
-        if (attrs && [attrs fileSize] > kMaxBytes) {
-            NSString *rotated = [path stringByAppendingString:@".1"];
-            [fm removeItemAtPath:rotated error:nil];
-            [fm moveItemAtPath:path toPath:rotated error:nil];
-        }
-        if (![fm fileExistsAtPath:path]) {
-            [[NSData data] writeToFile:path atomically:YES];
-        }
-
-        NSFileHandle *fh = [NSFileHandle fileHandleForWritingAtPath:path];
-        if (!fh) return;
-        @try {
-            [fh seekToEndOfFile];
-            [fh writeData:[line dataUsingEncoding:NSUTF8StringEncoding]];
-        } @catch (NSException *e) {
-        } @finally {
-            [fh closeFile];
-        }
-    });
+    os_unfair_lock_lock(&gWriteLock);
+    WAMDLOpenLocked();
+    if (gLogFD >= 0) {
+        ssize_t n = write(gLogFD, bytes, len);
+        if (n > 0) gWritten += (unsigned long long)n;
+        if (gWritten > kMaxBytes) WAMDLRotateLocked();
+    }
+    os_unfair_lock_unlock(&gWriteLock);
 }
 
 #pragma mark - Trace sites
@@ -263,12 +283,19 @@ void WAMLogTraceSite(WAMTraceSite *site) {
             (unsigned long)rows.count, [rows componentsJoinedByString:@"\n"]];
 }
 
+// Foundation-only: UIDevice is not safe to touch from a dylib constructor.
+static NSString *WAMDLOSVersionString(void) {
+    NSOperatingSystemVersion v = [NSProcessInfo processInfo].operatingSystemVersion;
+    return [NSString stringWithFormat:@"%ld.%ld.%ld",
+            (long)v.majorVersion, (long)v.minorVersion, (long)v.patchVersion];
+}
+
 + (void)logEnvironment {
     NSProcessInfo *pi = [NSProcessInfo processInfo];
     WAMLogWrite(@"env", [NSString stringWithFormat:
         @"WhatAMess filter prototype loaded | process=%@ pid=%d ios=%@ jbroot=%@ level=%@",
         pi.processName, (int)pi.processIdentifier,
-        [[UIDevice currentDevice] systemVersion],
+        WAMDLOSVersionString(),
         WAMDLJBRoot().length ? WAMDLJBRoot() : @"(rootful)",
         [self nameForLevel:[self level]]]);
     WAMLogWrite(@"env", [NSString stringWithFormat:@"log file: %@", WAMDLLogPath()]);
