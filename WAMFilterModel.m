@@ -1,4 +1,5 @@
 #import "WAMFilterModel.h"
+#import "WAMDebugLog.h"
 #import <stdlib.h>
 #import <sys/syslimits.h>
 
@@ -58,6 +59,8 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 }
 
 + (void)setActiveFilter:(WAMFilter)filter {
+    WAMLog(@"store", @"setActiveFilter %@ (was %@)",
+            [self describeFilter:filter], [self describeFilter:[self activeFilter]]);
     NSMutableDictionary *p = WAMFRead();
     p[kActiveKey] = @(filter);
     WAMFWrite(p);
@@ -108,6 +111,8 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
 
 + (void)setAssignedFilter:(WAMFilter)filter forTitle:(NSString *)title {
     NSString *k = [self keyForTitle:title];
+    WAMLog(@"store", @"setAssignedFilter %@ for title=%@ key=%@",
+            [self describeFilter:filter], title, k ?: @"(nil)");
     if (!k) return;
     NSMutableDictionary *p = WAMFRead();
     NSMutableDictionary *map = [(NSDictionary *)p[kAssignmentsKey] mutableCopy] ?: [NSMutableDictionary new];
@@ -212,6 +217,8 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
         return;
     }
 
+    WAMLog(@"store", @"roster record key=%@ title=%@ preview=%@",
+            k, title, newPreview.length > 40 ? [newPreview substringToIndex:40] : newPreview);
     roster[k] = @{
         @"title":   title ?: @"",
         @"preview": newPreview,
@@ -317,7 +324,12 @@ static NSString *const kEnabledKey     = @"isFilterButtonEnabled";
     ];
 }
 
++ (NSString *)describeFilter:(WAMFilter)filter {
+    return [NSString stringWithFormat:@"%@(%ld)", [self nameForFilter:filter], (long)filter];
+}
+
 + (void)postFilterChanged {
+    WAMLog(@"store", @"posting filterChanged darwin notification");
     CFNotificationCenterPostNotification(CFNotificationCenterGetDarwinNotifyCenter(),
         CFSTR(kWAMFilterChangedName), NULL, NULL, YES);
 }

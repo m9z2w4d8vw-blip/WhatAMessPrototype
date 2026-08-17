@@ -5,6 +5,7 @@
 #import "WAMPresetGalleryController.h"
 #import "WAMPresetModel.h"
 #import "WAMManageFilteringController.h"
+#import "WAMFilterLogViewController.h"
 #import <spawn.h>
 #import <sys/wait.h>
 
@@ -40,6 +41,12 @@
 - (void)browsePresets {
     WAMPresetGalleryController *gallery = [WAMPresetGalleryController new];
     [self.navigationController pushViewController:gallery animated:YES];
+}
+
+- (void)viewFilterLog {
+    WAMFilterLogViewController *vc = [WAMFilterLogViewController new];
+    vc.showsDoneButton = NO;
+    [self.navigationController pushViewController:vc animated:YES];
 }
 
 - (void)manageFiltering {

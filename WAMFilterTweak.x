@@ -1,14 +1,21 @@
 #import <UIKit/UIKit.h>
 #import <objc/runtime.h>
 #import "WAMFilterModel.h"
+#import "WAMDebugLog.h"
 #import "WAMManageFilteringController.h"
 
 #define kWAMFilterButtonTag 0x57414D46
 #define kWAMEmptyStateTag   0x57414D45
 
 static BOOL gWAMFCompacting = NO;
-static const void *kWAMFCanonRectKey = &kWAMFCanonRectKey;
-static const void *kWAMFTitleKey     = &kWAMFTitleKey;
+static BOOL gWAMFReinjecting = NO;
+static const void *kWAMFCanonRectKey  = &kWAMFCanonRectKey;
+static const void *kWAMFTitleKey      = &kWAMFTitleKey;
+static const void *kWAMFOwnedNavKey   = &kWAMFOwnedNavKey;
+static const void *kWAMFLastShownKey  = &kWAMFLastShownKey;
+
+static NSUInteger gWAMFInstallCount = 0;
+static NSUInteger gWAMFReinjectCount = 0;
 
 @interface CKConversationListCollectionViewController : UICollectionViewController
 - (void)wamfInstallFilterButton;
@@ -18,6 +25,14 @@ static const void *kWAMFTitleKey     = &kWAMFTitleKey;
 - (void)wamfOpenRecentlyDeleted;
 - (void)wamfCompactFilteredCells;
 - (void)wamfRefreshForFilterChange;
+@end
+
+@interface UINavigationItem (WAMFilter)
+- (void)wamfMarkOwned;
+- (BOOL)wamfIsOwned;
+- (BOOL)wamfHasFilterItem;
+- (void)wamfReinjectFromSetter:(NSString *)which;
+- (NSString *)wamfDescribeRightItems;
 @end
 
 @interface CKConversationListCollectionViewConversationCell : UICollectionViewCell
@@ -62,12 +77,120 @@ static UILabel *wamfTitleLabel(UIView *cell) {
     return best;
 }
 
+#pragma mark - Filter bar button item
+
+static UIBarButtonItem *wamfMakeFilterItem(UIMenu *menu, WAMFilter active) {
+    NSString *glyph = (active == WAMFilterAllMessages)
+        ? @"line.3.horizontal.decrease.circle"
+        : @"line.3.horizontal.decrease.circle.fill";
+
+    UIImage *img = [UIImage systemImageNamed:glyph];
+    if (!img) {
+        WAMLog(@"nav", @"systemImageNamed:%@ returned nil, falling back", glyph);
+        img = [UIImage systemImageNamed:@"line.3.horizontal"];
+    }
+
+    UIBarButtonItem *item = [[UIBarButtonItem alloc] initWithImage:img
+                                                            style:UIBarButtonItemStylePlain
+                                                           target:nil
+                                                           action:nil];
+    item.tag = kWAMFilterButtonTag;
+    item.accessibilityLabel = @"Filters";
+    item.menu = menu;
+    return item;
+}
+
+#pragma mark - UINavigationItem: keep our button alive
+
+%hook UINavigationItem
+
+%new
+- (void)wamfMarkOwned {
+    objc_setAssociatedObject(self, kWAMFOwnedNavKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+}
+
+%new
+- (BOOL)wamfIsOwned {
+    return [(NSNumber *)objc_getAssociatedObject(self, kWAMFOwnedNavKey) boolValue];
+}
+
+%new
+- (BOOL)wamfHasFilterItem {
+    for (UIBarButtonItem *i in self.rightBarButtonItems) {
+        if (i.tag == kWAMFilterButtonTag) return YES;
+    }
+    return NO;
+}
+
+%new
+- (NSString *)wamfDescribeRightItems {
+    NSMutableArray *bits = [NSMutableArray array];
+    for (UIBarButtonItem *i in self.rightBarButtonItems) {
+        [bits addObject:[NSString stringWithFormat:@"<%@ tag=%ld label=%@ sysItem=%@>",
+            NSStringFromClass([i class]), (long)i.tag,
+            i.accessibilityLabel ?: (i.title ?: @"-"),
+            i.image ? @"img" : @"none"]];
+    }
+    return bits.count ? [bits componentsJoinedByString:@" "] : @"(empty)";
+}
+
+%new
+- (void)wamfReinjectFromSetter:(NSString *)which {
+    if (gWAMFReinjecting) return;
+    if (![self wamfIsOwned]) return;
+    if (![WAMFilterStore filterButtonEnabled]) return;
+    if ([self wamfHasFilterItem]) return;
+
+    gWAMFReinjecting = YES;
+    gWAMFReinjectCount++;
+
+    WAMLog(@"nav", @"reinject #%lu after %@ -- items were: %@",
+            (unsigned long)gWAMFReinjectCount, which, [self wamfDescribeRightItems]);
+
+    WAMFilter active = [WAMFilterStore activeFilter];
+    UIMenu *menu = objc_getAssociatedObject(self, @selector(wamfReinjectFromSetter:));
+    UIBarButtonItem *filter = wamfMakeFilterItem(menu, active);
+
+    NSMutableArray *items = [(self.rightBarButtonItems ?: @[]) mutableCopy];
+    [items addObject:filter];
+    self.rightBarButtonItems = items;
+
+    WAMLog(@"nav", @"reinject #%lu done -- items now: %@",
+            (unsigned long)gWAMFReinjectCount, [self wamfDescribeRightItems]);
+
+    gWAMFReinjecting = NO;
+}
+
+- (void)setRightBarButtonItems:(NSArray<UIBarButtonItem *> *)items animated:(BOOL)animated {
+    %orig;
+    [self wamfReinjectFromSetter:@"setRightBarButtonItems:animated:"];
+}
+
+- (void)setRightBarButtonItems:(NSArray<UIBarButtonItem *> *)items {
+    %orig;
+    [self wamfReinjectFromSetter:@"setRightBarButtonItems:"];
+}
+
+- (void)setRightBarButtonItem:(UIBarButtonItem *)item animated:(BOOL)animated {
+    %orig;
+    [self wamfReinjectFromSetter:@"setRightBarButtonItem:animated:"];
+}
+
+- (void)setRightBarButtonItem:(UIBarButtonItem *)item {
+    %orig;
+    [self wamfReinjectFromSetter:@"setRightBarButtonItem:"];
+}
+
+%end
+
 #pragma mark - Darwin bridge
 
 static void wamfFilterChangedCallback(CFNotificationCenterRef center, void *observer,
                                       CFStringRef name, const void *object,
                                       CFDictionaryRef userInfo) {
+    WAMLogInvalidateCache();
     dispatch_async(dispatch_get_main_queue(), ^{
+        WAMLog(@"darwin", @"notification received, rebroadcasting in-process");
         [[NSNotificationCenter defaultCenter] postNotificationName:@"WAMFilterChangedInProcess"
                                                            object:nil];
     });
@@ -76,6 +199,7 @@ static void wamfFilterChangedCallback(CFNotificationCenterRef center, void *obse
 static void wamfEnsureDarwinObservers(void) {
     static dispatch_once_t once;
     dispatch_once(&once, ^{
+        WAMLog(@"life", @"registering darwin observers; logging to %@", [WAMDebugLog path]);
         CFNotificationCenterAddObserver(
             CFNotificationCenterGetDarwinNotifyCenter(), NULL,
             (CFNotificationCallback)wamfFilterChangedCallback,
@@ -142,6 +266,17 @@ static void wamfEnsureDarwinObservers(void) {
     }
 
     BOOL show = title.length ? [WAMFilterStore shouldShowTitle:title underFilter:active] : NO;
+
+    NSNumber *last = objc_getAssociatedObject(self, kWAMFLastShownKey);
+    if (!last || last.boolValue != show) {
+        objc_setAssociatedObject(self, kWAMFLastShownKey, @(show), OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        WAMLog(@"cell", @"%@ title=%@ effective=%@ under=%@",
+                show ? @"SHOW" : @"HIDE",
+                title ?: @"(none)",
+                [WAMFilterStore describeFilter:[WAMFilterStore effectiveFilterForTitle:title]],
+                [WAMFilterStore describeFilter:active]);
+    }
+
     if (self.hidden != !show) {
         self.hidden = !show;
         self.userInteractionEnabled = show;
@@ -177,6 +312,7 @@ static void wamfEnsureDarwinObservers(void) {
 - (void)viewDidLoad {
     %orig;
     wamfEnsureDarwinObservers();
+    WAMLog(@"life", @"viewDidLoad %@ navItem=%p", NSStringFromClass([self class]), self.navigationItem);
     [self wamfInstallFilterButton];
 
     [[NSNotificationCenter defaultCenter] addObserver:self
@@ -187,11 +323,23 @@ static void wamfEnsureDarwinObservers(void) {
 
 - (void)viewWillAppear:(BOOL)animated {
     %orig;
+    WAMLog(@"life", @"viewWillAppear navItem=%p hasFilter=%d editing=%d",
+            self.navigationItem, (int)[self.navigationItem wamfHasFilterItem], (int)self.isEditing);
     [self wamfInstallFilterButton];
 }
 
 - (void)viewDidLayoutSubviews {
     %orig;
+
+    // Safety net: if Messages swapped in a brand new UINavigationItem, the setter
+    // hook has nothing marked to reinject into, so re-install from scratch.
+    UINavigationItem *nav = self.navigationItem;
+    if (nav && [WAMFilterStore filterButtonEnabled] && ![nav wamfHasFilterItem]) {
+        WAMLog(@"nav", @"layout self-heal: button missing (owned=%d) -- reinstalling",
+                (int)[nav wamfIsOwned]);
+        [self wamfInstallFilterButton];
+    }
+
     [self wamfCompactFilteredCells];
 }
 
@@ -202,6 +350,8 @@ static void wamfEnsureDarwinObservers(void) {
 
 %new
 - (void)wamfRefreshForFilterChange {
+    WAMLog(@"life", @"refreshForFilterChange filter=%@",
+            [WAMFilterStore describeFilter:[WAMFilterStore activeFilter]]);
     [self wamfInstallFilterButton];
 
     UICollectionView *cv = self.collectionView;
@@ -230,34 +380,55 @@ static void wamfEnsureDarwinObservers(void) {
 %new
 - (void)wamfInstallFilterButton {
     UINavigationItem *item = self.navigationItem;
-    if (!item) return;
-
-    NSMutableArray *items = [(item.rightBarButtonItems ?: @[]) mutableCopy];
-    for (UIBarButtonItem *existing in [items copy]) {
-        if (existing.tag == kWAMFilterButtonTag) [items removeObject:existing];
+    if (!item) {
+        WAMLog(@"nav", @"install skipped: navigationItem is nil");
+        return;
     }
 
-    if (![WAMFilterStore filterButtonEnabled]) {
+    BOOL enabled = [WAMFilterStore filterButtonEnabled];
+    NSString *before = [item wamfDescribeRightItems];
+
+    NSMutableArray *items = [(item.rightBarButtonItems ?: @[]) mutableCopy];
+    NSUInteger removed = 0;
+    for (UIBarButtonItem *existing in [items copy]) {
+        if (existing.tag == kWAMFilterButtonTag) {
+            [items removeObject:existing];
+            removed++;
+        }
+    }
+
+    if (!enabled) {
+        gWAMFReinjecting = YES;
         item.rightBarButtonItems = items;
+        gWAMFReinjecting = NO;
+        objc_setAssociatedObject(item, kWAMFOwnedNavKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        WAMLog(@"nav", @"filter button disabled in prefs; removed %lu, items now: %@",
+                (unsigned long)removed, [item wamfDescribeRightItems]);
         return;
     }
 
     WAMFilter active = [WAMFilterStore activeFilter];
-    NSString *glyph = (active == WAMFilterAllMessages)
-        ? @"line.3.horizontal.decrease.circle"
-        : @"line.3.horizontal.decrease.circle.fill";
+    UIMenu *menu = [self wamfBuildFilterMenu];
+    UIBarButtonItem *filter = wamfMakeFilterItem(menu, active);
 
-    UIBarButtonItem *filter =
-        [[UIBarButtonItem alloc] initWithImage:[UIImage systemImageNamed:glyph]
-                                         style:UIBarButtonItemStylePlain
-                                        target:nil
-                                        action:nil];
-    filter.tag = kWAMFilterButtonTag;
-    filter.accessibilityLabel = @"Filters";
-    filter.menu = [self wamfBuildFilterMenu];
+    // Stash the menu on the nav item so a setter-triggered reinject can rebuild
+    // the button without needing the view controller.
+    objc_setAssociatedObject(item, @selector(wamfReinjectFromSetter:), menu,
+                             OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+    [item wamfMarkOwned];
 
+    // rightBarButtonItems is ordered right-to-left, so appending puts us
+    // immediately to the LEFT of the compose button.
     [items addObject:filter];
+
+    gWAMFReinjecting = YES;
     item.rightBarButtonItems = items;
+    gWAMFReinjecting = NO;
+
+    gWAMFInstallCount++;
+    WAMLog(@"nav", @"install #%lu active=%@ removedStale=%lu\n    before: %@\n    after:  %@",
+            (unsigned long)gWAMFInstallCount, [WAMFilterStore describeFilter:active],
+            (unsigned long)removed, before, [item wamfDescribeRightItems]);
 }
 
 %new
@@ -329,6 +500,8 @@ static void wamfEnsureDarwinObservers(void) {
 
 %new
 - (void)wamfSelectFilter:(NSNumber *)boxed {
+    WAMLog(@"menu", @"user picked %@",
+            [WAMFilterStore describeFilter:(WAMFilter)[boxed integerValue]]);
     [WAMFilterStore setActiveFilter:(WAMFilter)[boxed integerValue]];
     [WAMFilterStore postFilterChanged];
     [self wamfRefreshForFilterChange];
@@ -336,6 +509,8 @@ static void wamfEnsureDarwinObservers(void) {
 
 %new
 - (void)wamfOpenManageFiltering {
+    WAMLog(@"ui", @"opening Manage Filtering (roster=%lu)",
+            (unsigned long)[WAMFilterStore roster].count);
     UINavigationController *nav = [WAMManageFilteringController wrappedForPresentation];
     WAMManageFilteringController *root = (WAMManageFilteringController *)nav.viewControllers.firstObject;
     root.onChanged = ^{
@@ -346,6 +521,7 @@ static void wamfEnsureDarwinObservers(void) {
 
 %new
 - (void)wamfOpenRecentlyDeleted {
+    WAMLog(@"ui", @"Recently Deleted requested");
     NSArray *candidates = @[@"showRecentlyDeleted", @"_showRecentlyDeleted",
                             @"presentRecentlyDeleted", @"showRecentlyDeletedMessages",
                             @"openRecentlyDeleted"];
@@ -354,6 +530,7 @@ static void wamfEnsureDarwinObservers(void) {
         if ([self respondsToSelector:sel]) {
             #pragma clang diagnostic push
             #pragma clang diagnostic ignored "-Warc-performSelector-leaks"
+            WAMLog(@"ui", @"invoking system selector %@", name);
             [self performSelector:sel];
             #pragma clang diagnostic pop
             return;
@@ -433,6 +610,16 @@ static void wamfEnsureDarwinObservers(void) {
         shown++;
     }
     gWAMFCompacting = NO;
+
+    static NSInteger prevShown = -1;
+    static NSInteger prevTotal = -1;
+    if (shown != prevShown || (NSInteger)cells.count != prevTotal) {
+        prevShown = shown;
+        prevTotal = (NSInteger)cells.count;
+        WAMLog(@"compact", @"filter=%@ cells=%lu shown=%ld startY=%.1f",
+                [WAMFilterStore describeFilter:active],
+                (unsigned long)cells.count, (long)shown, cursor);
+    }
 
     if (shown == 0) {
         if (!empty) {

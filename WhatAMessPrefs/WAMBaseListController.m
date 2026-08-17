@@ -1,4 +1,5 @@
 #import "WAMBaseListController.h"
+#import "WAMDebugLog.h"
 #import <stdlib.h>
 #import <sys/syslimits.h>
 
@@ -26,6 +27,8 @@ NSString *WAMJBPath(NSString *suffix) {
 }
 
 - (void)writePrefs:(NSDictionary *)prefs {
+    WAMLogV(@"prefs", @"flushing %lu keys to %@",
+            (unsigned long)prefs.count, kWAMPrefsPlistPath);
     NSString *dir = [kWAMPrefsPlistPath stringByDeletingLastPathComponent];
     [[NSFileManager defaultManager] createDirectoryAtPath:dir
                               withIntermediateDirectories:YES
@@ -35,6 +38,8 @@ NSString *WAMJBPath(NSString *suffix) {
 }
 
 - (void)saveValue:(id)value forKey:(NSString *)key {
+    WAMLog(@"prefs", @"%@ write %@ = %@ (%@)", NSStringFromClass([self class]), key,
+           value ?: @"(removed)", value ? NSStringFromClass([value class]) : @"nil");
     NSMutableDictionary *prefs = [self readPrefs];
     if (value) {
         prefs[key] = value;
@@ -50,6 +55,8 @@ NSString *WAMJBPath(NSString *suffix) {
 }
 
 - (void)postNotification {
+    WAMLog(@"prefs", @"posting prefsChanged");
+    WAMLogInvalidateCache();
     CFNotificationCenterPostNotification(
         CFNotificationCenterGetDarwinNotifyCenter(),
         CFSTR(kWAMPrefsChanged),
@@ -61,6 +68,7 @@ NSString *WAMJBPath(NSString *suffix) {
 
 - (void)viewWillAppear:(BOOL)animated {
     [super viewWillAppear:animated];
+    WAMLog(@"prefs", @"pane appeared: %@", NSStringFromClass([self class]));
     NSMutableDictionary *prefs = [self readPrefs];
     if (!prefs[@"editingDarkMode"]) {
         BOOL dark = NO;
@@ -167,6 +175,7 @@ NSString *WAMJBPath(NSString *suffix) {
 
 - (void)colorPickerViewControllerDidFinish:(UIColorPickerViewController *)viewController {
     NSString *hex = [self hexFromColor:viewController.selectedColor];
+    WAMLog(@"prefs", @"colour picker finished: %@ = %@", _currentColorKey, hex);
     [self saveValue:hex forKey:_currentColorKey];
     [self postNotification];
 }
@@ -207,6 +216,9 @@ NSString *WAMJBPath(NSString *suffix) {
                                                     error:nil];
 
     NSData *data = UIImageJPEGRepresentation(image, 0.9);
+    WAMLog(@"prefs", @"image picked %.0fx%.0f -> %lu bytes at %@",
+           image.size.width, image.size.height,
+           (unsigned long)data.length, _currentImageDestPath);
     [data writeToFile:_currentImageDestPath atomically:YES];
 
     [self postNotification];

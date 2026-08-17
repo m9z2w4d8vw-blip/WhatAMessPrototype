@@ -1,4 +1,5 @@
 #import <UIKit/UIKit.h>
+#import "WAMDebugLog.h"
 
 #define kWAMFilterChangedName "com.oakstheawesome.whatamessprefs/filterChanged"
 
@@ -44,5 +45,7 @@ typedef NS_ENUM(NSInteger, WAMFilter) {
 + (NSArray<NSNumber *> *)assignableFilters;
 
 + (void)postFilterChanged;
+
++ (NSString *)describeFilter:(WAMFilter)filter;
 
 @end

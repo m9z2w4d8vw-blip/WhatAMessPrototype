@@ -4,6 +4,7 @@
 #import "WAMPresetModel.h"
 #import "WAMPresetCardView.h"
 #import "WAMGradientBuilderController.h"
+#import "WAMDebugLog.h"
 
 /*=====================
   A NOTE FROM THE DEV
@@ -451,6 +452,7 @@ static void wamHealBlursInView(UIView *root);
     BOOL nameChanged = (resolvedName.length && ![resolvedName isEqualToString:gWAMCurrentContactName]);
 
     if (nameChanged) {
+        WAMLog(@"beat", @"active chat changed to \"%@\" (source=%@)", resolvedName, convSource);
         gWAMCurrentContactName = [resolvedName copy];
         gWAMCurrentContactDisplayName = [resolvedName copy];
         gWAMActiveChatName = [resolvedName copy];
@@ -529,6 +531,10 @@ static void wamHealBlursInView(UIView *root);
     BOOL stateChanged = (chatIsActiveSurface != prevChatActive);
     prevChatActive = chatIsActiveSurface;
 
+    if (stateChanged) {
+        WAMLog(@"beat", @"chatIsActiveSurface -> %d (topVC=%@ listVisible=%d transitioning=%d)",
+               (int)chatIsActiveSurface, topVCClass, (int)listInWindow, (int)navTransitioning);
+    }
     if (chatIsActiveSurface) {
         BOOL wasActive = gWAMChatIsActiveSurface;
         gWAMChatIsActiveSurface = YES;
@@ -673,10 +679,16 @@ static UIColor *WAMPinnedTextCurrentColor = nil;
 
 static void reloadPrefs() {
     NSMutableDictionary *fromDisk = [NSMutableDictionary dictionaryWithContentsOfFile:kPrefsPlistPathRootless];
+    BOOL fromRootless = (fromDisk.count > 0);
     if (!fromDisk || fromDisk.count == 0) {
         fromDisk = [NSMutableDictionary dictionaryWithContentsOfFile:kPrefsPlistPathRootfull];
     }
     cachedPrefs = (fromDisk && fromDisk.count > 0) ? fromDisk : [NSMutableDictionary new];
+    WAMLog(@"prefs", @"reloadPrefs: %lu keys from %@ (enabled=%d dark=%d)",
+           (unsigned long)cachedPrefs.count,
+           fromRootless ? @"rootless" : (fromDisk.count ? @"rootfull" : @"NOTHING"),
+           (int)[cachedPrefs[@"isEnabled"] boolValue],
+           (int)isDarkMode());
 }
 
 static void reloadPrefsAndNotify() {
@@ -744,6 +756,7 @@ static CGFloat getPerContactBlur(NSString *contactName, BOOL isDark) {
 }
 
 static void setPerContactBlur(NSString *contactName, BOOL isDark, CGFloat blur) {
+    WAMLog(@"percontact", @"setBlur contact=%@ dark=%d blur=%.1f", contactName, (int)isDark, blur);
     NSString *safe = sanitizeContactName(contactName);
     if (!safe.length) return;
     NSString *path = kPrefsPlistPathRootless;
@@ -795,6 +808,7 @@ static BOOL hasPerContactOverride(NSString *contactName, NSString *key) {
 }
 
 static void setPerContactOverride(NSString *contactName, NSString *key, id value) {
+    WAMLog(@"percontact", @"setOverride contact=%@ key=%@ value=%@", contactName, key, value);
     NSString *safe = sanitizeContactName(contactName);
     if (!safe.length || !key.length) return;
     NSString *path = kPrefsPlistPathRootless;
@@ -880,6 +894,7 @@ static void setChatAliasName(NSString *chatIdentifier, NSString *displayName) {
 }
 
 static void migratePerChatData(NSString *fromName, NSString *toName) {
+    WAMLog(@"percontact", @"migratePerChatData %@ -> %@", fromName, toName);
     NSString *fromSafe = sanitizeContactName(fromName);
     NSString *toSafe = sanitizeContactName(toName);
     if (!fromSafe.length || !toSafe.length) return;
@@ -936,6 +951,7 @@ static void wamReconcileAliasForChat(NSString *chatIdentifier, NSString *display
 }
 
 static NSString *wamReadCurrentChatCanonicalName(void) {
+    WAMTrace("fn/wamReadCurrentChatCanonicalName");
     Class messagesCtrlClass = %c(CKMessagesController);
     if (!messagesCtrlClass) return nil;
 
@@ -986,6 +1002,7 @@ static NSString *wamReadCurrentChatCanonicalName(void) {
 }
 
 static NSString *getActiveContactNameForBg(void) {
+    WAMTrace("fn/getActiveContactNameForBg");
     NSString *canonical = wamReadCurrentChatCanonicalName();
     if (canonical.length) return canonical;
     if (gWAMTriggerNameOverride.length) return gWAMTriggerNameOverride;
@@ -993,6 +1010,7 @@ static NSString *getActiveContactNameForBg(void) {
 }
 
 static void wamResolvePerContactImageAndName(NSString **outPath, NSString **outName) {
+    WAMTrace("fn/wamResolvePerContactImageAndName");
     if (outPath) *outPath = nil;
     if (outName) *outName = nil;
     if (!isPerContactChatBgEnabled()) return;
@@ -1203,6 +1221,7 @@ BOOL isiOS15() {
            ![[NSProcessInfo processInfo] isOperatingSystemAtLeastVersion:iOS16];
 }
 
+static void wamLogDarkModeChange(BOOL now);
 static void updateDarkModeFromTraits(UITraitCollection *tc) {
     if (@available(iOS 13.0, *)) {
         gWAMIsDarkModeOnIOS15 = (tc.userInterfaceStyle == UIUserInterfaceStyleDark);
@@ -1323,6 +1342,8 @@ static NSString *hexFromColor(UIColor *color) {
 }
 
 static UIImage *loadImageUncached(NSString *path) {
+    WAMTrace("fn/loadImageUncached");
+    WAMLogV(@"bg", @"loadImageUncached %@", path ?: @"(nil)");
     NSData *data = [NSData dataWithContentsOfFile:path];
     return data ? [UIImage imageWithData:data] : nil;
 }
@@ -3886,6 +3907,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 %hook UIView
 
 - (UIColor *)tintColor {
+    WAMTrace("UIView/tintColor");
     if (!isTweakEnabled()) return %orig;
 
     {
@@ -4045,6 +4067,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UIView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
     if ([self class] == [UIView class]) {
@@ -4058,6 +4081,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("UIView/setBackgroundColor:");
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) {
         %orig;
         return;
@@ -4079,6 +4103,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 %hook CKConversationListCollectionViewController
 
 -(void)viewWillAppear:(BOOL)animated {
+    WAMTrace("CKConversationListCollectionViewController/viewWillAppear:");
     %orig;
     [[NSNotificationCenter defaultCenter] postNotificationName:kPrefsChangedNotification object:nil];
     if (!isTweakEnabled() || !isiOS15()) return;
@@ -4086,6 +4111,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 -(void)viewDidAppear:(BOOL)animated {
+    WAMTrace("CKConversationListCollectionViewController/viewDidAppear:");
     %orig;
     if (isTweakEnabled()) {
         [self handlePrefsChanged];
@@ -4102,6 +4128,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 
 %new
 -(void)applyCustomNavTitle {
+    WAMTrace("CKConversationListCollectionViewController/applyCustomNavTitle");
     NSString *title = getConversationListTitle();
     UIColor *titleColor = getConversationListTitleColor();
 
@@ -4120,6 +4147,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 -(void)viewDidLoad {
+    WAMTrace("CKConversationListCollectionViewController/viewDidLoad");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -4139,6 +4167,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 
 %new
 -(void)handlePrefsChanged {
+    WAMTrace("CKConversationListCollectionViewController/handlePrefsChanged");
     invalidateConvImageCache();
     refreshPrefs();
 
@@ -4162,6 +4191,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 
 %new
 -(void)applyCustomColorsToCKLabelsInView:(UIView *)view {
+    WAMTrace("CKConversationListCollectionViewController/applyCustomColorsToCKLabelsInView:");
     UIColor *custom = isCustomTextColorsEnabled() ? getTitleTextColorConvList() : nil;
     for (UIView *subview in view.subviews) {
         if ([subview isKindOfClass:%c(CKLabel)]) {
@@ -4182,6 +4212,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 
 %new
 -(void)updateAllColors {
+    WAMTrace("CKConversationListCollectionViewController/updateAllColors");
     if (!isTweakEnabled()) return;
 
     for (UICollectionViewCell *cell in self.collectionView.visibleCells) {
@@ -4192,6 +4223,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 -(void)viewDidLayoutSubviews {
+    WAMTrace("CKConversationListCollectionViewController/viewDidLayoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -4205,6 +4237,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 
 %new
 -(void)updateBackground {
+    WAMTrace("CKConversationListCollectionViewController/updateBackground");
     UIImage *bgImage = loadImageUncached(getConvImagePath());
 
     for (UIView *subview in [self.view.subviews copy]) {
@@ -4257,6 +4290,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 
 %new
 -(void)makeSubviewsTransparent:(UIView *)view {
+    WAMTrace("CKConversationListCollectionViewController/makeSubviewsTransparent:");
     for (UIView *subview in view.subviews) {
         if ([subview class] == [UIView class]) {
             UIColor *bgColor = subview.backgroundColor;
@@ -4274,6 +4308,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKConversationListCollectionViewController/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -4288,6 +4323,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 -(void)dealloc {
+    WAMTrace("CKConversationListCollectionViewController/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -4297,6 +4333,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 %hook CKConversationListCollectionViewConversationCell
 
 -(instancetype)initWithFrame:(CGRect)frame {
+    WAMTrace("CKConversationListCollectionViewConversationCell/initWithFrame:");
     if (!isTweakEnabled()) return %orig(frame);
     self = %orig(frame);
     if (self) {
@@ -4314,6 +4351,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 -(void)setHighlighted:(BOOL)highlighted {
+    WAMTrace("CKConversationListCollectionViewConversationCell/setHighlighted:");
     %orig;
     if (!highlighted || !isTweakEnabled() || !isPerContactChatBgEnabled()) return;
 
@@ -4368,6 +4406,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 -(void)layoutSubviews {
+    WAMTrace("CKConversationListCollectionViewConversationCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -4389,6 +4428,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 %hook UILabel
 
 - (void)setTextColor:(UIColor *)color {
+    WAMTrace("UILabel/setTextColor:");
     if (!isTweakEnabled() || !isCustomTextColorsEnabled()) {
         %orig;
         return;
@@ -4473,6 +4513,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)setText:(NSString *)text {
+    WAMTrace("UILabel/setText:");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -4556,6 +4597,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)didMoveToSuperview {
+    WAMTrace("UILabel/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled()) return;
     NSString *chatName = gWAMCurrentContactName;
@@ -4611,6 +4653,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UILabel/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
 
@@ -4636,6 +4679,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("UILabel/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -4665,6 +4709,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 %hook UIImageView
 
 - (void)setTintColor:(UIColor *)color {
+    WAMTrace("UIImageView/setTintColor:");
     if (!isTweakEnabled() || !isCustomTextColorsEnabled()) {
         %orig;
         return;
@@ -4694,6 +4739,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)setImage:(UIImage *)image {
+    WAMTrace("UIImageView/setImage:");
     %orig;
     if (!isTweakEnabled() || !image) return;
 
@@ -4727,6 +4773,7 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("UIImageView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -4763,6 +4810,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 %hook _UIBarBackground
 
 - (void)didMoveToWindow {
+    WAMTrace("_UIBarBackground/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (isModernNavBarEnabled() && self.window && !wamBarIsInMediaViewer(self)) {
@@ -4782,11 +4830,13 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (BOOL)isBottomBar {
+    WAMTrace("_UIBarBackground/isBottomBar");
     CGRect frameInScreen = [self convertRect:self.bounds toView:nil];
     return frameInScreen.origin.y > [UIScreen mainScreen].bounds.size.height / 2.0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UIBarBackground/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     if (wamBarIsInMediaViewer(self)) return;
@@ -4894,6 +4944,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)addSubview:(UIView *)view {
+    WAMTrace("_UIBarBackground/addSubview:");
     if (!isTweakEnabled() || !isModernNavBarEnabled()) {
         %orig;
         return;
@@ -4914,6 +4965,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)setAlpha:(CGFloat)alpha {
+    WAMTrace("_UIBarBackground/setAlpha:");
     if (!isTweakEnabled() || isModernNavBarEnabled()) {
         %orig;
         return;
@@ -4923,6 +4975,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (BOOL)findContactViewInWindow:(UIView *)view {
+    WAMTrace("_UIBarBackground/findContactViewInWindow:");
     if ([view isKindOfClass:NSClassFromString(@"CNContactView")]) return YES;
     for (UIView *subview in view.subviews) {
         if ([self findContactViewInWindow:subview]) return YES;
@@ -4932,6 +4985,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)removeSystemViews {
+    WAMTrace("_UIBarBackground/removeSystemViews");
     NSMutableArray *viewsToRemove = [NSMutableArray array];
     for (UIView *sub in self.subviews) {
         if ([sub isKindOfClass:[UIVisualEffectView class]]) {
@@ -4948,6 +5002,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)removeOurModernBlur {
+    WAMTrace("_UIBarBackground/removeOurModernBlur");
     for (UIView *sub in [self.subviews copy]) {
         if ([sub isKindOfClass:[UIVisualEffectView class]] &&
             [sub.layer.mask isKindOfClass:[CAGradientLayer class]]) {
@@ -4958,6 +5013,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)ensureBlurExists {
+    WAMTrace("_UIBarBackground/ensureBlurExists");
     [self removeSystemViews];
     for (UIView *sub in self.subviews) {
         if ([sub isKindOfClass:[UIVisualEffectView class]] &&
@@ -4968,6 +5024,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)createOurBlur {
+    WAMTrace("_UIBarBackground/createOurBlur");
     self.backgroundColor = [UIColor clearColor];
     self.opaque = NO;
 
@@ -5014,6 +5071,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)applyModernTintOverlay:(UIVisualEffectView *)blurView {
+    WAMTrace("_UIBarBackground/applyModernTintOverlay:");
     static NSInteger const kModernTintOverlayTag = 88991;
 
     UIView *existingOverlay = nil;
@@ -5045,6 +5103,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)handleNavBarPrefsChanged {
+    WAMTrace("_UIBarBackground/handleNavBarPrefsChanged");
     refreshPrefs();
     if (isModernNavBarEnabled()) {
         [self ensureBlurExists];
@@ -5060,6 +5119,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 %hook UINavigationController
 
 - (UIViewController *)popViewControllerAnimated:(BOOL)animated {
+    WAMTrace("UINavigationController/popViewControllerAnimated:");
     UIViewController *result = %orig;
     if (isTweakEnabled() && [result isKindOfClass:%c(CKMessagesController)]) {
         gWAMCurrentContactName = nil;
@@ -5070,6 +5130,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (NSArray<UIViewController *> *)popToRootViewControllerAnimated:(BOOL)animated {
+    WAMTrace("UINavigationController/popToRootViewControllerAnimated:");
     NSArray<UIViewController *> *result = %orig;
     if (isTweakEnabled() && result.count) {
         for (UIViewController *vc in result) {
@@ -5085,6 +5146,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (NSArray<UIViewController *> *)popToViewController:(UIViewController *)viewController animated:(BOOL)animated {
+    WAMTrace("UINavigationController/popToViewController:animated:");
     NSArray<UIViewController *> *result = %orig;
     if (isTweakEnabled() && result.count) {
         for (UIViewController *vc in result) {
@@ -5104,6 +5166,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 %hook UINavigationBar
 
 - (void)layoutSubviews {
+    WAMTrace("UINavigationBar/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -5124,6 +5187,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UINavigationBar/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -5155,6 +5219,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)handleNavBarPrefsChanged {
+    WAMTrace("UINavigationBar/handleNavBarPrefsChanged");
     refreshPrefs();
     [self setNeedsLayout];
     [self layoutIfNeeded];
@@ -5165,6 +5230,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)dealloc {
+    WAMTrace("UINavigationBar/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -5174,6 +5240,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 %hook _UINavigationBarTitleControl
 
 - (void)layoutSubviews {
+    WAMTrace("_UINavigationBarTitleControl/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -5217,6 +5284,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("_UINavigationBarTitleControl/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (self.window) {
@@ -5232,12 +5300,14 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)handleTitlePrefsChanged {
+    WAMTrace("_UINavigationBarTitleControl/handleTitlePrefsChanged");
     refreshPrefs();
     [self setNeedsLayout];
     [self layoutIfNeeded];
 }
 
 - (void)dealloc {
+    WAMTrace("_UINavigationBarTitleControl/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -5247,6 +5317,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 %hook _UICollectionViewListSeparatorView
 
 - (void)didMoveToWindow {
+    WAMTrace("_UICollectionViewListSeparatorView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     self.hidden = isSeparatorsEnabled();
@@ -5254,6 +5325,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UICollectionViewListSeparatorView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     self.hidden = isSeparatorsEnabled();
@@ -5265,12 +5337,14 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 %hook _UISearchBarSearchFieldBackgroundView
 
 - (void)didMoveToWindow {
+    WAMTrace("_UISearchBarSearchFieldBackgroundView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     self.hidden = isSearchBgEnabled();
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UISearchBarSearchFieldBackgroundView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     self.hidden = isSearchBgEnabled();
@@ -5281,6 +5355,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 %hook CKPinnedConversationView
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    WAMTrace("CKPinnedConversationView/touchesBegan:withEvent:");
     %orig;
     if (!isTweakEnabled() || !isPerContactChatBgEnabled()) return;
     NSString *captured = nil;
@@ -5372,6 +5447,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKPinnedConversationView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyPinnedGlow];
@@ -5388,18 +5464,21 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKPinnedConversationView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyPinnedGlow];
 }
 
 - (void)dealloc {
+    WAMTrace("CKPinnedConversationView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
 
 %new
 - (void)handlePinnedGlowPrefsChanged {
+    WAMTrace("CKPinnedConversationView/handlePinnedGlowPrefsChanged");
     refreshPrefs();
     if (isPinnedGlowEnabled()) {
         [self applyPinnedGlow];
@@ -5415,6 +5494,7 @@ static BOOL wamBarIsInMediaViewer(UIView *bar) {
 
 %new
 - (void)applyPinnedGlow {
+    WAMTrace("CKPinnedConversationView/applyPinnedGlow");
     if (!isPinnedGlowEnabled()) return;
     for (UIView *sub in self.subviews) {
         if (![sub isKindOfClass:[UIImageView class]]) continue;
@@ -5447,6 +5527,7 @@ static void wamDeOpaqueBalloonTree(UIView *root) {
 %hook CKTranscriptBalloonCell
 
 - (void)layoutSubviews {
+    WAMTrace("CKTranscriptBalloonCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     wamDeOpaqueBalloonTree(self);
@@ -5457,6 +5538,7 @@ static void wamDeOpaqueBalloonTree(UIView *root) {
 %hook CKTranscriptPluginBalloonView
 
 - (void)layoutSubviews {
+    WAMTrace("CKTranscriptPluginBalloonView/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !shouldShowAnyChatBgImage()) return;
     [self wamRoundPluginBalloon];
@@ -5464,6 +5546,7 @@ static void wamDeOpaqueBalloonTree(UIView *root) {
 
 %new
 - (void)wamRoundPluginBalloon {
+    WAMTrace("CKTranscriptPluginBalloonView/wamRoundPluginBalloon");
     CGRect b = self.bounds;
     if (b.size.width < 20 || b.size.height < 20) return;
 
@@ -5567,6 +5650,7 @@ static void wamAdoptNotificationContact(id transcriptVC) {
 %hook CKTranscriptCollectionViewController
 
 - (void)viewDidLoad {
+    WAMTrace("CKTranscriptCollectionViewController/viewDidLoad");
     %orig;
     wamAdoptNotificationContact(self);
     wamApplyBackdrop(self.view, wamHasCustomChatBackdrop(), YES);
@@ -5578,17 +5662,20 @@ static void wamAdoptNotificationContact(id transcriptVC) {
 }
 
 - (void)viewWillAppear:(BOOL)animated {
+    WAMTrace("CKTranscriptCollectionViewController/viewWillAppear:");
     %orig;
     wamAdoptNotificationContact(self);
 }
 
 - (void)viewDidLayoutSubviews {
+    WAMTrace("CKTranscriptCollectionViewController/viewDidLayoutSubviews");
     %orig;
     if (wamIsNotificationExtension() && !gWAMNotifContactName.length) wamAdoptNotificationContact(self);
 }
 
 %new
 - (void)handleTranscriptPrefsChanged {
+    WAMTrace("CKTranscriptCollectionViewController/handleTranscriptPrefsChanged");
     refreshPrefs();
     wamApplyBackdrop(self.view, wamHasCustomChatBackdrop(), YES);
     UICollectionView *cv = nil;
@@ -5605,6 +5692,7 @@ static void wamAdoptNotificationContact(id transcriptVC) {
 
 %new
 - (void)wamRefreshTranscriptCells:(UICollectionView *)cv {
+    WAMTrace("CKTranscriptCollectionViewController/wamRefreshTranscriptCells:");
     NSArray<NSIndexPath *> *visible = cv.indexPathsForVisibleItems;
     if (!visible.count) return;
 
@@ -5622,10 +5710,12 @@ static void wamAdoptNotificationContact(id transcriptVC) {
 }
 
 -(BOOL)shouldUseOpaqueMask {
+    WAMTrace("CKTranscriptCollectionViewController/shouldUseOpaqueMask");
     return %orig;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKTranscriptCollectionViewController/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -5644,6 +5734,7 @@ static void wamAdoptNotificationContact(id transcriptVC) {
 }
 
 - (void)dealloc {
+    WAMTrace("CKTranscriptCollectionViewController/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -5653,24 +5744,28 @@ static void wamAdoptNotificationContact(id transcriptVC) {
 %hook CKGradientReferenceView
 
 -(void)setFrame:(CGRect)arg1 {
+    WAMTrace("CKGradientReferenceView/setFrame:");
     %orig;
     [self wamApplyChatBackdrop];
     if (isTweakEnabled()) [self wamUpdateTranscriptBackground];
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKGradientReferenceView/didMoveToWindow");
     %orig;
     [self wamApplyChatBackdrop];
     if (isTweakEnabled() && self.window) [self wamUpdateTranscriptBackground];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    WAMTrace("CKGradientReferenceView/traitCollectionDidChange:");
     %orig;
     [self wamApplyChatBackdrop];
 }
 
 %new
 - (void)wamApplyChatBackdrop {
+    WAMTrace("CKGradientReferenceView/wamApplyChatBackdrop");
     if (!self.window) return;
     if (wamIsInSendAnimationWindow(self)) {
         wamApplyBackdrop(self, NO, NO);
@@ -5680,12 +5775,14 @@ static void wamAdoptNotificationContact(id transcriptVC) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKGradientReferenceView/layoutSubviews");
     %orig;
     if (isTweakEnabled()) [self wamUpdateTranscriptBackground];
 }
 
 %new
 - (void)wamUpdateTranscriptBackground {
+    WAMTrace("CKGradientReferenceView/wamUpdateTranscriptBackground");
     static const char kWAMRefBgStateKey = 0;
 
     UIWindow *win = self.window;
@@ -5789,6 +5886,7 @@ static void wamRelayoutGradients(UIView *root) {
 %hook CKMessagesController
 
 -(void)viewDidLoad {
+    WAMTrace("CKMessagesController/viewDidLoad");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -5808,6 +5906,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 -(void)handleAppDidBecomeActiveForBg {
+    WAMTrace("CKMessagesController/handleAppDidBecomeActiveForBg");
     if (!isTweakEnabled()) return;
     [self wamRefreshChatBackgroundWithSelfContext];
     [self wamRevalidateBlurs];
@@ -5815,6 +5914,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 - (void)wamRefreshChatBackgroundWithSelfContext {
+    WAMTrace("CKMessagesController/wamRefreshChatBackgroundWithSelfContext");
     NSString *name = nil;
     @try {
         id conv = [self valueForKey:@"_currentConversation"];
@@ -5847,6 +5947,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 -(void)handleChatPrefsChanged {
+    WAMTrace("CKMessagesController/handleChatPrefsChanged");
     refreshPrefs();
     [self wamRefreshChatBackgroundWithSelfContext];
 
@@ -5854,6 +5955,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 -(void)forceRedrawCell:(UIView *)view {
+    WAMTrace("CKMessagesController/forceRedrawCell:");
     if ([view isKindOfClass:%c(CKGradientView)]) {
         [view setNeedsLayout];
         [view layoutIfNeeded];
@@ -5872,10 +5974,12 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 -(void)wamPlaceChatBackground:(UIView *)bg {
+    WAMTrace("CKMessagesController/wamPlaceChatBackground:");
     wamPlaceBackgroundBelowTranscript(self.view, bg);
 }
 
 - (void)viewDidLayoutSubviews {
+    WAMTrace("CKMessagesController/viewDidLayoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIView *bg = nil;
@@ -5887,6 +5991,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 -(void)updateChatBackground {
+    WAMTrace("CKMessagesController/updateChatBackground");
     static const char kBgStateKey = 0;
 
     refreshPrefs();
@@ -5970,6 +6075,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 - (NSArray *)getAllSubviews:(UIView *)view {
+    WAMTrace("CKMessagesController/getAllSubviews:");
     NSMutableArray *allSubviews = [NSMutableArray array];
     [allSubviews addObject:view];
     for (UIView *subview in view.subviews) {
@@ -5979,6 +6085,7 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKMessagesController/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -5991,6 +6098,7 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 -(void)viewWillAppear:(BOOL)animated {
+    WAMTrace("CKMessagesController/viewWillAppear:");
     %orig;
     if (isiOS15()) updateDarkModeFromTraits(self.traitCollection);
     if (isTweakEnabled() && wamIsPreviewContext(self)) {
@@ -6002,6 +6110,7 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 - (void)setCurrentConversation:(id)conversation {
+    WAMTrace("CKMessagesController/setCurrentConversation:");
     gWAMChatGeneration++;
     %orig;
     [self wamRevalidateBlurs];
@@ -6011,6 +6120,7 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 - (void)_setCurrentConversation:(id)conversation {
+    WAMTrace("CKMessagesController/_setCurrentConversation:");
     gWAMChatGeneration++;
     %orig;
     [self wamRevalidateBlurs];
@@ -6020,6 +6130,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 - (void)wamRevalidateBlurs {
+    WAMTrace("CKMessagesController/wamRevalidateBlurs");
     if (!isTweakEnabled() || !self.isViewLoaded) return;
     gWAMMaskGeneration++;
     wamRelayoutGradients(self.view);
@@ -6034,6 +6145,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 - (void)wamHandleConversationChanged:(id)conversation {
+    WAMTrace("CKMessagesController/wamHandleConversationChanged:");
     if (!isTweakEnabled()) return;
     if (!conversation) return;
     if (!isPerContactChatBgEnabled()) return;
@@ -6098,12 +6210,14 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 -(void)dealloc {
+    WAMTrace("CKMessagesController/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
 
 %new
 - (void)wamClearChatAndForceRefresh {
+    WAMTrace("CKMessagesController/wamClearChatAndForceRefresh");
     if (gWAMChatIsActiveSurface) {
         gWAMChatIsActiveSurface = NO;
         gWAMCurrentContactName = nil;
@@ -6131,6 +6245,7 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
+    WAMTrace("CKMessagesController/viewDidDisappear:");
     %orig;
     if (!isTweakEnabled()) return;
     if (objc_getAssociatedObject(self, @selector(wamIsPreviewContext:))) {
@@ -6143,6 +6258,7 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 - (void)didMoveToParentViewController:(UIViewController *)parent {
+    WAMTrace("CKMessagesController/didMoveToParentViewController:");
     %orig;
     if (!isTweakEnabled()) return;
     if (!parent) {
@@ -6151,6 +6267,7 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 - (void)viewWillDisappear:(BOOL)animated {
+    WAMTrace("CKMessagesController/viewWillDisappear:");
     if (isTweakEnabled() && (self.isMovingFromParentViewController || self.isBeingDismissed)) {
         gWAMChatIsActiveSurface = NO;
         gWAMCurrentContactName = nil;
@@ -6183,6 +6300,7 @@ static void wamRelayoutGradients(UIView *root) {
 }
 
 - (void)viewDidAppear:(BOOL)animated {
+    WAMTrace("CKMessagesController/viewDidAppear:");
     %orig;
     if (!isTweakEnabled()) return;
     [[NSNotificationCenter defaultCenter] postNotificationName:kPrefsChangedNotification object:nil];
@@ -6192,6 +6310,7 @@ static void wamRelayoutGradients(UIView *root) {
 
 %new
 - (void)wamRetryBgRefresh:(int)attempt {
+    WAMTrace("CKMessagesController/wamRetryBgRefresh:");
     if (!isTweakEnabled()) return;
     UINavigationController *nav = self.navigationController;
     if (nav && ![nav.viewControllers containsObject:self]) return;
@@ -6279,6 +6398,7 @@ static UIBezierPath *wamBubbleMaskPath(CGSize size, BOOL tailRight, BOOL hasTail
 
 static void wamHealBlursInView(UIView *root) {
     if (!root || !isBlurBubblesEnabled()) return;
+    WAMTrace("fn/wamHealBlursInView");
     Class gvCls = objc_getClass("CKGradientView");
     if (!gvCls) return;
     NSMutableArray *stack = [NSMutableArray arrayWithObject:root];
@@ -6334,6 +6454,7 @@ static void wamClearForeignBlur(UIView *g) {
 
 %new
 - (void)wamApplySentBlur:(int)color {
+    WAMTrace("CKGradientView/wamApplySentBlur:");
     UIView *balloon = self.superview;
     if (!balloon) return;
     CGRect b = self.bounds;
@@ -6394,6 +6515,7 @@ static void wamClearForeignBlur(UIView *g) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKGradientView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     if (self.frame.size.width <= 0 || self.frame.size.height <= 0) return;
@@ -6430,6 +6552,7 @@ static void wamClearForeignBlur(UIView *g) {
 }
 
 - (void)setColors:(NSArray *)colors {
+    WAMTrace("CKGradientView/setColors:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -6661,6 +6784,7 @@ static void wamStripOurBlurs(UIView *balloon) {
 
 %new
 - (void)wamApplyReceivedBlurWithImage:(UIImage *)shape tintColor:(UIColor *)tintColor mirror:(BOOL)mirror {
+    WAMTrace("CKBalloonImageView/wamApplyReceivedBlurWithImage:tintColor:mirror:");
     UIVisualEffectView *blur = objc_getAssociatedObject(self, &kWAMBlurViewKey);
     if (!blur) {
         blur = wamMakeBlurView(self.bounds);
@@ -6688,6 +6812,7 @@ static void wamStripOurBlurs(UIView *balloon) {
 
 %new
 - (void)wamLayoutBlurBubble {
+    WAMTrace("CKBalloonImageView/wamLayoutBlurBubble");
     UIVisualEffectView *blur = objc_getAssociatedObject(self, &kWAMBlurViewKey);
     if (!blur) return;
     CGRect b = self.bounds;
@@ -6766,6 +6891,7 @@ static void wamStripOurBlurs(UIView *balloon) {
 
 %new
 - (void)wamRemoveReceivedBlur {
+    WAMTrace("CKBalloonImageView/wamRemoveReceivedBlur");
     UIView *blur = objc_getAssociatedObject(self, &kWAMBlurViewKey);
     if (blur) [blur removeFromSuperview];
     objc_setAssociatedObject(self, &kWAMBlurViewKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -6778,6 +6904,7 @@ static void wamStripOurBlurs(UIView *balloon) {
 }
 
 - (void)setImage:(UIImage *)image {
+    WAMTrace("CKBalloonImageView/setImage:");
     if (!isTweakEnabled() || !image) {
         %orig;
         return;
@@ -6840,6 +6967,7 @@ static void wamStripOurBlurs(UIView *balloon) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKBalloonImageView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -6881,36 +7009,42 @@ static BOOL wamReplyPreviewIsFromMe(UIView *v) {
 %hook CKBalloonTextView
 
 - (void)didMoveToSuperview {
+    WAMTrace("CKBalloonTextView/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled() || !self.superview) return;
     [self updateTextColorForBalloon];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKBalloonTextView/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
     [self updateTextColorForBalloon];
 }
 
 - (void)setText:(NSString *)text {
+    WAMTrace("CKBalloonTextView/setText:");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
     [self updateTextColorForBalloon];
 }
 
 - (void)setAttributedText:(NSAttributedString *)attributedText {
+    WAMTrace("CKBalloonTextView/setAttributedText:");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
     [self updateTextColorForBalloon];
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKBalloonTextView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled() || !self.window) return;
     [self updateTextColorForBalloon];
 }
 
 - (void)setTextColor:(UIColor *)textColor {
+    WAMTrace("CKBalloonTextView/setTextColor:");
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) {
         %orig;
         return;
@@ -6933,6 +7067,7 @@ static BOOL wamReplyPreviewIsFromMe(UIView *v) {
 }
 
 - (void)setTintColor:(UIColor *)tintColor {
+    WAMTrace("CKBalloonTextView/setTintColor:");
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) {
         %orig;
         return;
@@ -6956,6 +7091,7 @@ static BOOL wamReplyPreviewIsFromMe(UIView *v) {
 
 %new
 - (UIColor *)getCustomTextColor {
+    WAMTrace("CKBalloonTextView/getCustomTextColor");
     UIView *parent = self.superview;
     int levels = 0;
     Class replyCls = objc_getClass("CKTextReplyPreviewBalloonView");
@@ -6985,6 +7121,7 @@ static BOOL wamReplyPreviewIsFromMe(UIView *v) {
 
 %new
 - (void)updateTextColorForBalloon {
+    WAMTrace("CKBalloonTextView/updateTextColorForBalloon");
     UIColor *textColor = [self getCustomTextColor];
     if (textColor) {
         objc_setAssociatedObject(self, @selector(setTextColor:), @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -7024,6 +7161,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook CALayer
 
 - (void)setContents:(id)contents {
+    WAMTrace("CALayer/setContents:");
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled() || !contents) {
         %orig;
         return;
@@ -7063,6 +7201,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook CKTranscriptStatusCell
 
 - (void)layoutSubviews {
+    WAMTrace("CKTranscriptStatusCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
 
@@ -7077,6 +7216,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKTranscriptStatusCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (self.window) {
@@ -7092,11 +7232,13 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (void)handleTimestampPrefsChanged {
+    WAMTrace("CKTranscriptStatusCell/handleTimestampPrefsChanged");
     [self setNeedsLayout];
     [self layoutIfNeeded];
 }
 
 - (void)dealloc {
+    WAMTrace("CKTranscriptStatusCell/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -7106,6 +7248,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook CKTranscriptLabelCell
 
 - (void)layoutSubviews {
+    WAMTrace("CKTranscriptLabelCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
 
@@ -7123,6 +7266,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKTranscriptLabelCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (self.window) {
@@ -7138,11 +7282,13 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (void)handleTimestampPrefsChanged {
+    WAMTrace("CKTranscriptLabelCell/handleTimestampPrefsChanged");
     [self setNeedsLayout];
     [self layoutIfNeeded];
 }
 
 - (void)dealloc {
+    WAMTrace("CKTranscriptLabelCell/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -7152,6 +7298,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook _UIVisualEffectBackdropView
 
 - (void)didMoveToWindow {
+    WAMTrace("_UIVisualEffectBackdropView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (!self.window) {
@@ -7167,6 +7314,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (void)wamHandleBackdropPrefsChanged {
+    WAMTrace("_UIVisualEffectBackdropView/wamHandleBackdropPrefsChanged");
     UIView *p = self.superview;
     int lvl = 0;
     while (p && lvl < 15) {
@@ -7181,11 +7329,13 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)dealloc {
+    WAMTrace("_UIVisualEffectBackdropView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UIVisualEffectBackdropView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -7376,6 +7526,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)willMoveToSuperview:(UIView *)newSuperview {
+    WAMTrace("_UIVisualEffectBackdropView/willMoveToSuperview:");
     %orig;
     if (!newSuperview || !isTweakEnabled() || !isModernMessageBarEnabled()) return;
 
@@ -7418,6 +7569,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("_UIVisualEffectBackdropView/setBackgroundColor:");
     if (!isTweakEnabled() || !isModernMessageBarEnabled()) {
         %orig;
         return;
@@ -7464,6 +7616,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook _UIVisualEffectContentView
 
 - (void)layoutSubviews {
+    WAMTrace("_UIVisualEffectContentView/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isModernMessageBarEnabled()) return;
 
@@ -7498,6 +7651,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("_UIVisualEffectContentView/setBackgroundColor:");
     if (!isTweakEnabled() || !isModernMessageBarEnabled()) {
         %orig;
         return;
@@ -7539,6 +7693,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook _UIVisualEffectSubview
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("_UIVisualEffectSubview/setBackgroundColor:");
     if (!isTweakEnabled() || !isModernMessageBarEnabled()) {
         %orig;
         return;
@@ -7574,6 +7729,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UIVisualEffectSubview/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isModernMessageBarEnabled()) return;
 
@@ -7600,6 +7756,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("_UIVisualEffectSubview/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isModernMessageBarEnabled()) return;
 
@@ -7628,6 +7785,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook CKMessageEntryView
 
 - (void)willMoveToWindow:(UIWindow *)newWindow {
+    WAMTrace("CKMessageEntryView/willMoveToWindow:");
     %orig;
     if (!isTweakEnabled()) return;
     if (newWindow && gWAMCurrentContactName.length) {
@@ -7637,6 +7795,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKMessageEntryView/layoutSubviews");
     %orig;
     if (isTweakEnabled()) {
         [self applyInputFieldCustomization];
@@ -7644,6 +7803,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKMessageEntryView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled() || !isiOS15()) return;
     if (@available(iOS 13.0, *)) {
@@ -7658,6 +7818,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKMessageEntryView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -7681,6 +7842,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (void)handleAppDidBecomeActive {
+    WAMTrace("CKMessageEntryView/handleAppDidBecomeActive");
     if (!isTweakEnabled() || !isiOS15()) return;
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -7695,6 +7857,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (void)setNeedsLayoutRecursively:(UIView *)view {
+    WAMTrace("CKMessageEntryView/setNeedsLayoutRecursively:");
     [view setNeedsLayout];
     for (UIView *sub in view.subviews) {
         [self setNeedsLayoutRecursively:sub];
@@ -7703,6 +7866,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 -(void)handleInputFieldPrefsChanged {
+    WAMTrace("CKMessageEntryView/handleInputFieldPrefsChanged");
     refreshPrefs();
     [self setNeedsLayoutRecursively:self];
     [self layoutIfNeeded];
@@ -7711,6 +7875,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (void)applyInputFieldCustomization {
+    WAMTrace("CKMessageEntryView/applyInputFieldCustomization");
     static const char kWAMInputFieldOrigBgKey = 0;
     static const char kWAMPlaceholderOrigColorKey = 0;
     static const char kWAMPlaceholderOrigTextKey = 0;
@@ -7860,6 +8025,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (UITextView *)findTextView:(UIView *)view {
+    WAMTrace("CKMessageEntryView/findTextView:");
     if ([view isKindOfClass:[UITextView class]]) return (UITextView *)view;
     for (UIView *subview in view.subviews) {
         UITextView *found = [self findTextView:subview];
@@ -7870,6 +8036,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (UIView *)findRoundedView:(UIView *)view {
+    WAMTrace("CKMessageEntryView/findRoundedView:");
     if (view != self &&
         view.layer.cornerRadius > 10.0 &&
         view.layer.cornerRadius < 30.0 &&
@@ -7884,6 +8051,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (UIView *)findViewByClassName:(UIView *)view {
+    WAMTrace("CKMessageEntryView/findViewByClassName:");
     NSString *className = NSStringFromClass([view class]);
     if ([className containsString:@"ContentView"] ||
         [className containsString:@"BackgroundView"] ||
@@ -7898,6 +8066,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)dealloc {
+    WAMTrace("CKMessageEntryView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -7907,6 +8076,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 %hook CKMessageEntryRichTextView
 
 - (void)layoutSubviews {
+    WAMTrace("CKMessageEntryRichTextView/layoutSubviews");
     %orig;
 
     if (isTweakEnabled() && isPlaceholderCustomizationEnabled() && isInputFieldCustomizationEnabled()) {
@@ -7927,6 +8097,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKMessageEntryRichTextView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -7942,6 +8113,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 
 %new
 - (void)handleRichTextPrefsChanged {
+    WAMTrace("CKMessageEntryRichTextView/handleRichTextPrefsChanged");
     refreshPrefs();
     [self setNeedsLayout];
     [self layoutIfNeeded];
@@ -7951,11 +8123,13 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)dealloc {
+    WAMTrace("CKMessageEntryRichTextView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
 
 - (void)setTextColor:(UIColor *)textColor {
+    WAMTrace("CKMessageEntryRichTextView/setTextColor:");
     if (isTweakEnabled() && isInputFieldCustomizationEnabled() && isMessageInputTextEnabled()) {
         UIColor *customTextColor = getMessageInputTextColor();
         if (customTextColor && isTextViewSafeForColorWrite(self)) {
@@ -7967,6 +8141,7 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 }
 
 - (void)setText:(NSString *)text {
+    WAMTrace("CKMessageEntryRichTextView/setText:");
     %orig;
     if (isTweakEnabled() && isInputFieldCustomizationEnabled() && isMessageInputTextEnabled()) {
         UIColor *customTextColor = getMessageInputTextColor();
@@ -7984,6 +8159,7 @@ static const char kWAMOriginalImageKey = 0;
 static const char kWAMDrawerOverlayKey = 0;
 
 - (void)layoutSubviews {
+    WAMTrace("CKEntryViewButton/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     static NSTimeInterval sLastEntryRefresh = 0;
@@ -7994,6 +8170,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)wamApplyEntryButtonColors {
+    WAMTrace("CKEntryViewButton/wamApplyEntryButtonColors");
     UIColor *sendColor = getSendButtonColor();
     UIColor *arrowColor = getSendArrowColor();
     UIColor *buttonColor = getMessageBarButtonColor();
@@ -8108,11 +8285,13 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)applyColorsDirectly {
+    WAMTrace("CKEntryViewButton/applyColorsDirectly");
     refreshPrefs();
     [self wamApplyEntryButtonColors];
 }
 
 - (void)willMoveToWindow:(UIWindow *)newWindow {
+    WAMTrace("CKEntryViewButton/willMoveToWindow:");
     %orig;
     if (!isTweakEnabled()) return;
     if (newWindow && gWAMCurrentContactName.length) {
@@ -8123,6 +8302,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKEntryViewButton/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -8149,6 +8329,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)wamScheduleEntryButtonRetries {
+    WAMTrace("CKEntryViewButton/wamScheduleEntryButtonRetries");
     if (!self.window) return;
     __weak typeof(self) weakSelf = self;
     for (NSNumber *delay in @[@0.02, @0.08, @0.2, @0.4, @0.8]) {
@@ -8163,6 +8344,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleButtonResumeActive {
+    WAMTrace("CKEntryViewButton/handleButtonResumeActive");
     if (!isTweakEnabled() || !isiOS15()) return;
     __weak typeof(self) weakSelf = self;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -8175,11 +8357,13 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleButtonPrefsChanged {
+    WAMTrace("CKEntryViewButton/handleButtonPrefsChanged");
     refreshPrefs();
     [self wamApplyEntryButtonColors];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKEntryViewButton/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -8194,6 +8378,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKEntryViewButton/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -8203,6 +8388,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKDetailsTableView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKDetailsTableView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     objc_setAssociatedObject(self, "wam_headerChecked", nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -8218,12 +8404,14 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)didMoveToSuperview {
+    WAMTrace("CKDetailsTableView/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled() || !self.superview) return;
     [self updateDetailsBackground];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKDetailsTableView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UITableView *tv = (UITableView *)self;
@@ -8259,6 +8447,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (UIView *)hitTest:(CGPoint)point withEvent:(UIEvent *)event {
+    WAMTrace("CKDetailsTableView/hitTest:withEvent:");
     if (!isTweakEnabled() || !isPerContactChatBgEnabled()) return %orig;
     UITableView *tv = (UITableView *)self;
     UITableViewCell *photoCell = nil;
@@ -8281,6 +8470,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setDelegate:(id<UITableViewDelegate>)delegate {
+    WAMTrace("CKDetailsTableView/setDelegate:");
     %orig;
     if (delegate && isTweakEnabled() && isPerContactChatBgEnabled()) {
         [self wamSwizzleHeightDelegate:delegate];
@@ -8289,6 +8479,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)wamSwizzleHeightDelegate:(id)delegate {
+    WAMTrace("CKDetailsTableView/wamSwizzleHeightDelegate:");
     static NSMutableSet *swizzledClasses = nil;
     if (!swizzledClasses) swizzledClasses = [NSMutableSet new];
     Class cls = [delegate class];
@@ -8324,6 +8515,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)wamInstallCustomizeHeader {
+    WAMTrace("CKDetailsTableView/wamInstallCustomizeHeader");
     UITableView *tv = (UITableView *)self;
     UIView *header = [[UIView alloc] initWithFrame:CGRectMake(0, 0, tv.bounds.size.width, 64)];
     header.autoresizingMask = UIViewAutoresizingFlexibleWidth;
@@ -8397,6 +8589,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)wamHeaderCustomizeTapped {
+    WAMTrace("CKDetailsTableView/wamHeaderCustomizeTapped");
     NSString *name = wamReadCurrentChatCanonicalName();
     if (!name.length) name = gWAMCurrentContactName;
     if (!name.length) return;
@@ -8413,6 +8606,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleDetailsPrefsChanged {
+    WAMTrace("CKDetailsTableView/handleDetailsPrefsChanged");
     refreshPrefs();
     [self updateDetailsBackground];
     [self applyDetailsNavTitleColor];
@@ -8424,6 +8618,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (NSInteger)wamRecolorTableLabelsInView:(UIView *)view {
+    WAMTrace("CKDetailsTableView/wamRecolorTableLabelsInView:");
     NSInteger count = 0;
     if ([view isKindOfClass:%c(UITableViewLabel)] &&
         [view respondsToSelector:@selector(wamApplyTableLabelColor)]) {
@@ -8436,6 +8631,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)applyDetailsNavTitleColor {
+    WAMTrace("CKDetailsTableView/applyDetailsNavTitleColor");
     if (!isiOS15() || !isTweakEnabled()) return;
     UIColor *titleColor = getChatContactNameColor();
     if (!titleColor) return;
@@ -8459,6 +8655,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)updateDetailsBackground {
+    WAMTrace("CKDetailsTableView/updateDetailsBackground");
     if (isiOS17OrHigher()) {
         self.backgroundView = nil;
         self.backgroundColor = [UIColor clearColor];
@@ -8488,6 +8685,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKDetailsTableView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -8499,6 +8697,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKDetailsTableView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -8508,12 +8707,14 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKSearchCollectionView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKSearchCollectionView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self applySearchBackground];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKSearchCollectionView/layoutSubviews");
         %orig;
         if (!isTweakEnabled()) return;
         for (UIView *subview in self.subviews) {
@@ -8526,6 +8727,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)applySearchBackground {
+    WAMTrace("CKSearchCollectionView/applySearchBackground");
     UIView *parent = self.superview;
     BOOL isInDetailsView = NO;
     BOOL isInPushedDetailsSubmenu = NO;
@@ -8591,6 +8793,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKSearchCollectionView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -8606,6 +8809,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook _UITableViewHeaderFooterContentView
 
 - (void)didMoveToWindow {
+    WAMTrace("_UITableViewHeaderFooterContentView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -8622,6 +8826,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("_UITableViewHeaderFooterContentView/setBackgroundColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -8645,6 +8850,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CNGroupIdentityHeaderContainerView
 
 - (void)didMoveToWindow {
+    WAMTrace("CNGroupIdentityHeaderContainerView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     self.backgroundColor = [UIColor clearColor];
@@ -8653,6 +8859,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CNGroupIdentityHeaderContainerView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyContactNameColor];
@@ -8660,6 +8867,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setFrame:(CGRect)frame {
+    WAMTrace("CNGroupIdentityHeaderContainerView/setFrame:");
     if (isTweakEnabled() && isPerContactChatBgEnabled() && frame.size.height > 213) {
         frame.size.height = 213;
     }
@@ -8668,6 +8876,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)wamCacheNameAndRefreshChatBg {
+    WAMTrace("CNGroupIdentityHeaderContainerView/wamCacheNameAndRefreshChatBg");
     NSString *displayed = [self displayedContactName];
     if (!displayed.length) return;
     if ([displayed isEqualToString:gWAMCurrentContactDisplayName]) return;
@@ -8677,6 +8886,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (NSString *)displayedContactName {
+    WAMTrace("CNGroupIdentityHeaderContainerView/displayedContactName");
     for (UIView *subview in self.subviews) {
         if ([subview isKindOfClass:[UILabel class]]) {
             NSString *t = ((UILabel *)subview).text;
@@ -8699,6 +8909,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)applyContactNameColor {
+    WAMTrace("CNGroupIdentityHeaderContainerView/applyContactNameColor");
     UIColor *titleColor = nil;
     if (isCustomTextColorsEnabled()) {
         NSString *nameKey = isDarkMode() ? @"chatContactNameColorDark" : @"chatContactNameColor";
@@ -8742,6 +8953,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("CNGroupIdentityHeaderContainerView/setBackgroundColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -8754,6 +8966,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKGroupPhotoCell
 
 - (void)didMoveToWindow {
+    WAMTrace("CKGroupPhotoCell/didMoveToWindow");
     %orig;
     self.backgroundColor = [UIColor clearColor];
     UITableViewCell *cell = (UITableViewCell *)self;
@@ -8775,16 +8988,19 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleGroupPhotoCellPrefsChanged {
+    WAMTrace("CKGroupPhotoCell/handleGroupPhotoCellPrefsChanged");
     refreshPrefs();
     if (isPerContactChatBgEnabled()) [self ensurePerContactBgButton];
 }
 
 - (void)dealloc {
+    WAMTrace("CKGroupPhotoCell/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKGroupPhotoCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UITableViewCell *cell = (UITableViewCell *)self;
@@ -8795,6 +9011,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("CKGroupPhotoCell/setBackgroundColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -8803,6 +9020,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setFrame:(CGRect)frame {
+    WAMTrace("CKGroupPhotoCell/setFrame:");
     if (isTweakEnabled() && isPerContactChatBgEnabled() && frame.size.height > 0 && frame.size.height < 277) {
         frame.size.height = 277;
     }
@@ -8810,6 +9028,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setClipsToBounds:(BOOL)clips {
+    WAMTrace("CKGroupPhotoCell/setClipsToBounds:");
     if (isTweakEnabled() && isPerContactChatBgEnabled()) {
         %orig(NO);
         return;
@@ -8818,6 +9037,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (BOOL)pointInside:(CGPoint)point withEvent:(UIEvent *)event {
+    WAMTrace("CKGroupPhotoCell/pointInside:withEvent:");
     BOOL wamOrigInside = %orig;
     if (wamOrigInside) {
         return YES;
@@ -8831,18 +9051,21 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (CGSize)sizeThatFits:(CGSize)size {
+    WAMTrace("CKGroupPhotoCell/sizeThatFits:");
     CGSize sz = %orig;
     if (isTweakEnabled() && isPerContactChatBgEnabled()) sz.height += 64;
     return sz;
 }
 
 - (CGSize)systemLayoutSizeFittingSize:(CGSize)targetSize withHorizontalFittingPriority:(UILayoutPriority)hPriority verticalFittingPriority:(UILayoutPriority)vPriority {
+    WAMTrace("CKGroupPhotoCell/systemLayoutSizeFittingSize:withHorizontalFittingPriority:verticalFittingPriority:");
     CGSize sz = %orig;
     if (isTweakEnabled() && isPerContactChatBgEnabled()) sz.height += 64;
     return sz;
 }
 
 - (CGSize)intrinsicContentSize {
+    WAMTrace("CKGroupPhotoCell/intrinsicContentSize");
     CGSize sz = %orig;
     if (isTweakEnabled() && isPerContactChatBgEnabled()) sz.height += 64;
     return sz;
@@ -8850,6 +9073,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)ensurePerContactBgButton {
+    WAMTrace("CKGroupPhotoCell/ensurePerContactBgButton");
     static const NSInteger kBlurTag = 87731;
     static const NSInteger kLabelTag = 87732;
     static const NSInteger kTintTag = 87733;
@@ -8951,6 +9175,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)perContactBgCellTapped {
+    WAMTrace("CKGroupPhotoCell/perContactBgCellTapped");
     NSString *name = gWAMCurrentContactName;
     if (!name.length) return;
     WAMPerContactSettings *vc = [WAMPerContactSettings new];
@@ -8969,6 +9194,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CNActionView
 
 - (void)didMoveToWindow {
+    WAMTrace("CNActionView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyActionViewBlur];
@@ -8982,12 +9208,14 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleActionViewPrefsChanged {
+    WAMTrace("CNActionView/handleActionViewPrefsChanged");
     refreshPrefs();
     [self applyActionViewBlur];
 }
 
 %new
 - (void)applyActionViewBlur {
+    WAMTrace("CNActionView/applyActionViewBlur");
     for (UIView *subview in [self.subviews copy]) {
         if ([subview isKindOfClass:[UIVisualEffectView class]] && subview.tag == 12345) {
             [subview removeFromSuperview];
@@ -9024,6 +9252,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)wamRefreshTintInBackdrop:(UIVisualEffectView *)blurView color:(UIColor *)tintColor {
+    WAMTrace("CNActionView/wamRefreshTintInBackdrop:color:");
     UIView *tintOverlay = [self viewWithTag:12346];
     if (!tintOverlay) {
         tintOverlay = [[UIView alloc] initWithFrame:self.bounds];
@@ -9050,6 +9279,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CNActionView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -9089,6 +9319,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)applyActionColor:(UIColor *)color toView:(UIView *)view {
+    WAMTrace("CNActionView/applyActionColor:toView:");
     for (UIView *sub in view.subviews) {
         if ([sub isKindOfClass:[UIVisualEffectView class]]) continue;
         if ([sub isKindOfClass:[UILabel class]]) {
@@ -9100,6 +9331,7 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)updateIconOpacity {
+    WAMTrace("CNActionView/updateIconOpacity");
     BOOL isDisabled = NO;
     @try {
         id disabled = [self valueForKey:@"disabled"];
@@ -9129,6 +9361,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CNActionView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -9151,6 +9384,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CNActionView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -9160,6 +9394,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKTranscriptDetailsResizableCell
 
 - (void)didMoveToWindow {
+    WAMTrace("CKTranscriptDetailsResizableCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyBlurStyle];
@@ -9172,12 +9407,14 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleBlurCellPrefsChanged {
+    WAMTrace("CKTranscriptDetailsResizableCell/handleBlurCellPrefsChanged");
     refreshPrefs();
     [self applyBlurStyle];
 }
 
 %new
 - (void)applyBlurStyle {
+    WAMTrace("CKTranscriptDetailsResizableCell/applyBlurStyle");
     for (UIView *subview in [self.contentView.subviews copy]) {
         if ([subview isKindOfClass:[UIVisualEffectView class]]) [subview removeFromSuperview];
     }
@@ -9213,6 +9450,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKTranscriptDetailsResizableCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -9233,6 +9471,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKTranscriptDetailsResizableCell/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -9242,6 +9481,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKDetailsSharedWithYouCell
 
 - (void)didMoveToWindow {
+    WAMTrace("CKDetailsSharedWithYouCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyBlurStyle];
@@ -9254,12 +9494,14 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleBlurCellPrefsChanged {
+    WAMTrace("CKDetailsSharedWithYouCell/handleBlurCellPrefsChanged");
     refreshPrefs();
     [self applyBlurStyle];
 }
 
 %new
 - (void)applyBlurStyle {
+    WAMTrace("CKDetailsSharedWithYouCell/applyBlurStyle");
     for (UIView *subview in [self.subviews copy]) {
         if ([subview isKindOfClass:[UIVisualEffectView class]]) [subview removeFromSuperview];
     }
@@ -9298,6 +9540,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKDetailsSharedWithYouCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -9318,6 +9561,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKDetailsSharedWithYouCell/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -9327,6 +9571,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKBackgroundDecorationView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKBackgroundDecorationView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyBlurStyle];
@@ -9339,12 +9584,14 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleBlurCellPrefsChanged {
+    WAMTrace("CKBackgroundDecorationView/handleBlurCellPrefsChanged");
     refreshPrefs();
     [self applyBlurStyle];
 }
 
 %new
 - (void)applyBlurStyle {
+    WAMTrace("CKBackgroundDecorationView/applyBlurStyle");
     for (UIView *subview in [self.subviews copy]) {
         if ([subview isKindOfClass:[UIVisualEffectView class]]) [subview removeFromSuperview];
     }
@@ -9379,6 +9626,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKBackgroundDecorationView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -9399,6 +9647,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKBackgroundDecorationView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -9408,6 +9657,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKDetailsChatOptionsCell
 
 - (void)didMoveToWindow {
+    WAMTrace("CKDetailsChatOptionsCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyBlurStyle];
@@ -9420,12 +9670,14 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleBlurCellPrefsChanged {
+    WAMTrace("CKDetailsChatOptionsCell/handleBlurCellPrefsChanged");
     refreshPrefs();
     [self applyBlurStyle];
 }
 
 %new
 - (void)applyBlurStyle {
+    WAMTrace("CKDetailsChatOptionsCell/applyBlurStyle");
     for (UIView *subview in [self.subviews copy]) {
         if ([subview isKindOfClass:[UIVisualEffectView class]]) [subview removeFromSuperview];
     }
@@ -9465,6 +9717,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKDetailsChatOptionsCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -9495,6 +9748,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKDetailsChatOptionsCell/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -9504,6 +9758,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKRecipientSelectionView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKRecipientSelectionView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self updateRecipientBackground];
@@ -9517,12 +9772,14 @@ static const char kWAMDrawerOverlayKey = 0;
 
 %new
 - (void)handleRecipientPrefsChanged {
+    WAMTrace("CKRecipientSelectionView/handleRecipientPrefsChanged");
     refreshPrefs();
     [self updateRecipientBackground];
 }
 
 %new
 - (void)updateRecipientBackground {
+    WAMTrace("CKRecipientSelectionView/updateRecipientBackground");
     for (UIView *sub in [self.subviews copy]) {
         if (sub.tag == kWAMOurBgImageTag) [sub removeFromSuperview];
     }
@@ -9546,6 +9803,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKRecipientSelectionView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -9558,6 +9816,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKRecipientSelectionView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -9569,6 +9828,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKRecipientSelectionView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -9578,6 +9838,7 @@ static const char kWAMDrawerOverlayKey = 0;
 %hook CKComposeRecipientView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKComposeRecipientView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (wamHasCustomChatBackdrop()) {
@@ -9588,6 +9849,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("CKComposeRecipientView/setBackgroundColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -9600,6 +9862,7 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previous {
+    WAMTrace("CKComposeRecipientView/traitCollectionDidChange:");
     %orig;
     if (isTweakEnabled() && !wamHasCustomChatBackdrop()) {
         self.backgroundColor = wamBaseSystemBackground(self);
@@ -9623,6 +9886,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 
 %new
 - (void)wamApplyTableLabelColor {
+    WAMTrace("UITableViewLabel/wamApplyTableLabelColor");
     UIColor *customTint = getAdvancedTableLabelColor();
     objc_setAssociatedObject(self, &kWAMTableLabelUpdatingKey, @YES, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
 
@@ -9654,6 +9918,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UITableViewLabel/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -9672,12 +9937,14 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 
 %new
 - (void)wamHandleTableLabelPrefsChanged {
+    WAMTrace("UITableViewLabel/wamHandleTableLabelPrefsChanged");
     if (!isTweakEnabled()) return;
     refreshPrefs();
     [self wamApplyTableLabelColor];
 }
 
 - (void)setTextColor:(UIColor *)color {
+    WAMTrace("UITableViewLabel/setTextColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -9703,6 +9970,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("UITableViewLabel/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -9714,6 +9982,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)dealloc {
+    WAMTrace("UITableViewLabel/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -9724,6 +9993,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 
 %new
 - (void)wamApplySwitchTint {
+    WAMTrace("UISwitch/wamApplySwitchTint");
     static const char kWAMSwitchOrigKey = 0;
     if (wamSwitchOwnsItsTint(self)) return;
     UIColor *customTint = nil;
@@ -9748,6 +10018,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UISwitch/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (wamSwitchOwnsItsTint(self)) return;
@@ -9767,18 +10038,21 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 
 %new
 - (void)wamHandleSwitchPrefsChanged {
+    WAMTrace("UISwitch/wamHandleSwitchPrefsChanged");
     if (!isTweakEnabled()) return;
     refreshPrefs();
     [self wamApplySwitchTint];
 }
 
 - (void)setOn:(BOOL)on animated:(BOOL)animated {
+    WAMTrace("UISwitch/setOn:animated:");
     %orig;
     if (!isTweakEnabled()) return;
     [self wamApplySwitchTint];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("UISwitch/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -9794,6 +10068,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 %hook UIButtonLabel
 
 - (void)setText:(NSString *)text {
+    WAMTrace("UIButtonLabel/setText:");
     %orig;
     if (!isTweakEnabled()) return;
     if ([text isEqualToString:@"Report Junk"]) {
@@ -9814,6 +10089,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UIButtonLabel/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if ([self.text isEqualToString:@"Report Junk"]) {
@@ -9834,6 +10110,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)setTextColor:(UIColor *)color {
+    WAMTrace("UIButtonLabel/setTextColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -9863,6 +10140,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("UIButtonLabel/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     if ([self.text isEqualToString:@"Report Junk"]) {
@@ -9887,6 +10165,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 %hook UIButton
 
 - (void)setTintColor:(UIColor *)color {
+    WAMTrace("UIButton/setTintColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -9909,6 +10188,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UIButton/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     UIView *parent = self.superview;
@@ -9930,6 +10210,7 @@ static BOOL wamLabelIsRedish(UIColor *color) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("UIButton/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIView *parent = self.superview;
@@ -10046,6 +10327,7 @@ static UIColor *wamReactionBlurTint(UIView *c) {
 
 %hook CKAggregateAcknowledgmentBalloonView
 - (void)layoutSubviews {
+    WAMTrace("CKAggregateAcknowledgmentBalloonView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIView *v = (UIView *)self;
@@ -10056,6 +10338,7 @@ static UIColor *wamReactionBlurTint(UIView *c) {
 
 %hook CKAggregateAcknowledgmentGradientBalloonView
 - (void)layoutSubviews {
+    WAMTrace("CKAggregateAcknowledgmentGradientBalloonView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIView *v = (UIView *)self;
@@ -10067,6 +10350,7 @@ static UIColor *wamReactionBlurTint(UIView *c) {
 %hook CKAggregateAcknowledgementBalloonView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKAggregateAcknowledgementBalloonView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     BOOL hasGlyphOverride = isAdvancedValueExplicitlySet(@"advancedReactionGlyphColor", @"advancedReactionGlyphColorDark");
@@ -10082,6 +10366,7 @@ static UIColor *wamReactionBlurTint(UIView *c) {
 }
 
 - (void)setTintColor:(UIColor *)color {
+    WAMTrace("CKAggregateAcknowledgementBalloonView/setTintColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -10104,6 +10389,7 @@ static UIColor *wamReactionBlurTint(UIView *c) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKAggregateAcknowledgementBalloonView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     BOOL hasGlyphOverride = isAdvancedValueExplicitlySet(@"advancedReactionGlyphColor", @"advancedReactionGlyphColorDark");
@@ -10120,6 +10406,7 @@ static UIColor *wamReactionBlurTint(UIView *c) {
 
 %new
 - (void)applyGlyphTintRecursively:(UIView *)view {
+    WAMTrace("CKAggregateAcknowledgementBalloonView/applyGlyphTintRecursively:");
     UIColor *glyphTint = getGlyphTintColor();
 
     if ([view isKindOfClass:%c(CKAcknowledgmentGlyphImageView)]) {
@@ -10171,6 +10458,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 %hook _UIPlatterClippingView
 
 - (void)didMoveToWindow {
+    WAMTrace("_UIPlatterClippingView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (self.bounds.size.height < 200) return;
@@ -10179,6 +10467,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UIPlatterClippingView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -10207,6 +10496,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 
 %new
 - (void)applyPlatterBackground {
+    WAMTrace("_UIPlatterClippingView/applyPlatterBackground");
     UIImage *chatBgImage = loadImageUncached(getChatImagePath());
 
     if (isChatColorBgEnabled()) {
@@ -10228,6 +10518,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("_UIPlatterClippingView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -10245,6 +10536,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 %hook _UIPlatterShadowView
 
 - (void)didMoveToWindow {
+    WAMTrace("_UIPlatterShadowView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     if (!isChatColorBgEnabled() && !isChatImageBgEnabled()) return;
@@ -10253,6 +10545,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UIPlatterShadowView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     if (!isChatColorBgEnabled() && !isChatImageBgEnabled()) return;
@@ -10261,6 +10554,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 }
 
 - (void)setHidden:(BOOL)hidden {
+    WAMTrace("_UIPlatterShadowView/setHidden:");
     if (!isTweakEnabled() || (!isChatColorBgEnabled() && !isChatImageBgEnabled())) {
         %orig;
         return;
@@ -10277,6 +10571,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 %hook _UIPlatterSoftShadowView
 
 - (void)didMoveToWindow {
+    WAMTrace("_UIPlatterSoftShadowView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     if (!isChatColorBgEnabled() && !isChatImageBgEnabled()) return;
@@ -10285,6 +10580,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UIPlatterSoftShadowView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     if (!isChatColorBgEnabled() && !isChatImageBgEnabled()) return;
@@ -10293,6 +10589,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 }
 
 - (void)setHidden:(BOOL)hidden {
+    WAMTrace("_UIPlatterSoftShadowView/setHidden:");
     if (!isTweakEnabled() || (!isChatColorBgEnabled() && !isChatImageBgEnabled())) {
         %orig;
         return;
@@ -10309,6 +10606,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 %hook _UICutoutShadowView
 
 - (void)didMoveToWindow {
+    WAMTrace("_UICutoutShadowView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     if (!isChatColorBgEnabled() && !isChatImageBgEnabled()) return;
@@ -10317,6 +10615,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UICutoutShadowView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     if (!isChatColorBgEnabled() && !isChatImageBgEnabled()) return;
@@ -10325,6 +10624,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 }
 
 - (void)setHidden:(BOOL)hidden {
+    WAMTrace("_UICutoutShadowView/setHidden:");
     if (!isTweakEnabled() || (!isChatColorBgEnabled() && !isChatImageBgEnabled())) {
         %orig;
         return;
@@ -10340,6 +10640,7 @@ static BOOL wamPlatterHostsAppExtension(UIView *view) {
 
 %hook _UIPlatterTransformView
 - (void)layoutSubviews {
+    WAMTrace("_UIPlatterTransformView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     self.backgroundColor = [UIColor clearColor];
@@ -10364,6 +10665,7 @@ static const char kWAMReplicantBlankedKey = 0;
 
 %new
 - (BOOL)wamShouldBlankReplicant {
+    WAMTrace("_UIReplicantView/wamShouldBlankReplicant");
     if (!isChatColorBgEnabled() && !isChatImageBgEnabled()) return NO;
     if (!isReplicantInsidePlatter(self)) return NO;
     return self.bounds.size.height >= 200;
@@ -10371,6 +10673,7 @@ static const char kWAMReplicantBlankedKey = 0;
 
 %new
 - (void)wamSyncReplicantBlanking {
+    WAMTrace("_UIReplicantView/wamSyncReplicantBlanking");
     BOOL blanked = [objc_getAssociatedObject(self, &kWAMReplicantBlankedKey) boolValue];
     BOOL should = [self wamShouldBlankReplicant];
     if (should) {
@@ -10383,18 +10686,21 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)didMoveToSuperview {
+    WAMTrace("_UIReplicantView/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled() || !self.superview) return;
     [self wamSyncReplicantBlanking];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("_UIReplicantView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self wamSyncReplicantBlanking];
 }
 
 - (void)setAlpha:(CGFloat)alpha {
+    WAMTrace("_UIReplicantView/setAlpha:");
     if (isTweakEnabled() && [self wamShouldBlankReplicant]) {
         %orig(0);
         return;
@@ -10407,6 +10713,7 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook _UISystemBackgroundView
 
 - (void)setConfiguration:(id)configuration {
+    WAMTrace("_UISystemBackgroundView/setConfiguration:");
     %orig(configuration);
     if (!isTweakEnabled()) return;
     for (UIView *sub in self.subviews) {
@@ -10422,6 +10729,7 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook CKTranscriptReportSpamCell
 
 - (void)layoutSubviews {
+    WAMTrace("CKTranscriptReportSpamCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIColor *customTint = getChatAdvancedTintColorForView(@"advancedReportJunkColor", @"advancedReportJunkColorDark", getSystemTintColor(), self);
@@ -10430,6 +10738,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKTranscriptReportSpamCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     UIColor *customTint = getChatAdvancedTintColorForView(@"advancedReportJunkColor", @"advancedReportJunkColorDark", getSystemTintColor(), self);
@@ -10439,6 +10748,7 @@ static const char kWAMReplicantBlankedKey = 0;
 
 %new
 - (void)colorReportJunkButton:(UIView *)view withColor:(UIColor *)color {
+    WAMTrace("CKTranscriptReportSpamCell/colorReportJunkButton:withColor:");
     if ([view isKindOfClass:%c(UIButtonLabel)]) {
         UILabel *label = (UILabel *)view;
         if ([label.text isEqualToString:@"Report Junk"]) label.textColor = color;
@@ -10451,6 +10761,7 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook CKAcknowledgmentGlyphImageView
 
 - (void)setImage:(UIImage *)image {
+    WAMTrace("CKAcknowledgmentGlyphImageView/setImage:");
     if (!isTweakEnabled() || !image) {
         %orig;
         return;
@@ -10479,6 +10790,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)didMoveToSuperview {
+    WAMTrace("CKAcknowledgmentGlyphImageView/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled() || !self.superview) return;
     UIImage *currentImage = [self valueForKey:@"_image"];
@@ -10490,6 +10802,7 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook CKThumbsUpAcknowledgmentGlyphView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKThumbsUpAcknowledgmentGlyphView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window || !isCustomBubbleColorsEnabled()) return;
 
@@ -10503,6 +10816,7 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook CKTranscriptUnavailabilityIndicatorCell
 
 - (void)layoutSubviews {
+    WAMTrace("CKTranscriptUnavailabilityIndicatorCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIColor *customTint = getSystemTintColor();
@@ -10511,6 +10825,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKTranscriptUnavailabilityIndicatorCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     UIColor *customTint = getSystemTintColor();
@@ -10520,6 +10835,7 @@ static const char kWAMReplicantBlankedKey = 0;
 
 %new
 - (void)applyColorToUnavailabilityIndicator:(UIView *)view withColor:(UIColor *)color {
+    WAMTrace("CKTranscriptUnavailabilityIndicatorCell/applyColorToUnavailabilityIndicator:withColor:");
     if ([view isKindOfClass:[UILabel class]]) {
         UILabel *label = (UILabel *)view;
         label.textColor = color;
@@ -10547,6 +10863,7 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook UINavigationButton
 
 - (void)setTintColor:(UIColor *)color {
+    WAMTrace("UINavigationButton/setTintColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -10577,6 +10894,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UINavigationButton/didMoveToWindow");
     %orig;
     [[NSNotificationCenter defaultCenter] removeObserver:self name:kPrefsChangedNotification object:nil];
     if (!isTweakEnabled() || !self.window) return;
@@ -10589,12 +10907,14 @@ static const char kWAMReplicantBlankedKey = 0;
 
 %new
 - (void)wamHandleNavButtonPrefsChanged {
+    WAMTrace("UINavigationButton/wamHandleNavButtonPrefsChanged");
     refreshPrefs();
     [self wamApplyNavButtonTint];
 }
 
 %new
 - (void)wamApplyNavButtonTint {
+    WAMTrace("UINavigationButton/wamApplyNavButtonTint");
     static const char kWAMNavButtonOrigKey = 0;
     UIView *parent = self.superview;
     int levels = 0;
@@ -10629,6 +10949,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("UINavigationButton/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -10640,6 +10961,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("UINavigationButton/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -10649,6 +10971,7 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook CKTranscriptNotifyAnywayButtonCell
 
 - (void)layoutSubviews {
+    WAMTrace("CKTranscriptNotifyAnywayButtonCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIColor *customTint = getSystemTintColor();
@@ -10668,6 +10991,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKTranscriptNotifyAnywayButtonCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     UIColor *customTint = getSystemTintColor();
@@ -10687,6 +11011,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)didMoveToSuperview {
+    WAMTrace("CKTranscriptNotifyAnywayButtonCell/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled() || !self.superview) return;
     __weak typeof(self) weakSelf = self;
@@ -10697,6 +11022,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)willMoveToWindow:(UIWindow *)newWindow {
+    WAMTrace("CKTranscriptNotifyAnywayButtonCell/willMoveToWindow:");
     %orig;
     if (!isTweakEnabled() || !newWindow) return;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -10706,6 +11032,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)prepareForReuse {
+    WAMTrace("CKTranscriptNotifyAnywayButtonCell/prepareForReuse");
     %orig;
     if (!isTweakEnabled()) return;
     dispatch_async(dispatch_get_main_queue(), ^{
@@ -10719,18 +11046,21 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook UISearchTextField
 
 - (void)didMoveToWindow {
+    WAMTrace("UISearchTextField/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     [self applySearchFieldTint];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("UISearchTextField/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self applySearchFieldTint];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("UISearchTextField/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -10743,6 +11073,7 @@ static const char kWAMReplicantBlankedKey = 0;
 
 %new
 - (void)applySearchFieldTint {
+    WAMTrace("UISearchTextField/applySearchFieldTint");
     static const char kWAMSearchFieldAppliedKey = 0;
     BOOL hasOwn = isAdvancedValueExplicitlySet(@"advancedSearchFieldColor", @"advancedSearchFieldColorDark");
     BOOL hasGlobalTint = isAdvancedValueExplicitlySet(@"systemTintColor", @"systemTintColorDark");
@@ -10802,6 +11133,7 @@ static const char kWAMReplicantBlankedKey = 0;
 %hook UISearchBar
 
 - (void)setAlpha:(CGFloat)alpha {
+    WAMTrace("UISearchBar/setAlpha:");
     %orig;
     if (!isTweakEnabled()) return;
     for (UIView *subview in self.subviews) {
@@ -10823,6 +11155,7 @@ static const char kWAMReplicantBlankedKey = 0;
 }
 
 - (void)setTransform:(CGAffineTransform)transform {
+    WAMTrace("UISearchBar/setTransform:");
     %orig;
     if (!isTweakEnabled()) return;
     for (UIView *subview in self.subviews) {
@@ -10850,6 +11183,7 @@ static const char kWAMReplicantBlankedKey = 0;
 static const char kWAMHeaderLabelOrigKey = 0;
 
 - (void)didMoveToWindow {
+    WAMTrace("CKDetailsSearchResultsTitleHeaderCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (self.window) {
@@ -10865,6 +11199,7 @@ static const char kWAMHeaderLabelOrigKey = 0;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKDetailsSearchResultsTitleHeaderCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyHeaderStyle];
@@ -10872,6 +11207,7 @@ static const char kWAMHeaderLabelOrigKey = 0;
 
 %new
 - (void)wamHandleHeaderPrefsChanged {
+    WAMTrace("CKDetailsSearchResultsTitleHeaderCell/wamHandleHeaderPrefsChanged");
     if (!isTweakEnabled()) return;
     refreshPrefs();
     [self applyHeaderStyle];
@@ -10879,6 +11215,7 @@ static const char kWAMHeaderLabelOrigKey = 0;
 
 %new
 - (void)applyHeaderStyle {
+    WAMTrace("CKDetailsSearchResultsTitleHeaderCell/applyHeaderStyle");
     if (isModernNavBarEnabled()) {
         self.backgroundColor = [UIColor clearColor];
         for (UIView *subview in self.subviews) {
@@ -10920,6 +11257,7 @@ static const char kWAMHeaderLabelOrigKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKDetailsSearchResultsTitleHeaderCell/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -10929,12 +11267,14 @@ static const char kWAMHeaderLabelOrigKey = 0;
 %hook CKSearchResultsTitleHeaderCell
 
 - (void)didMoveToWindow {
+    WAMTrace("CKSearchResultsTitleHeaderCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyHeaderStyle];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKSearchResultsTitleHeaderCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyHeaderStyle];
@@ -10942,6 +11282,7 @@ static const char kWAMHeaderLabelOrigKey = 0;
 
 %new
 - (void)applyHeaderStyle {
+    WAMTrace("CKSearchResultsTitleHeaderCell/applyHeaderStyle");
     if (isModernNavBarEnabled()) {
         self.backgroundColor = [UIColor clearColor];
         for (UIView *subview in self.subviews) {
@@ -10967,6 +11308,7 @@ static const char kWAMHeaderLabelOrigKey = 0;
 
 %new
 - (void)wamApplyTitleColor {
+    WAMTrace("CKAvatarTitleCollectionReusableView/wamApplyTitleColor");
     UIColor *applied = nil;
     if (isTweakEnabled() && isCustomTextColorsEnabled()) {
         NSString *nameKey = isDarkMode() ? @"chatContactNameColorDark" : @"chatContactNameColor";
@@ -10996,17 +11338,20 @@ static const char kWAMHeaderLabelOrigKey = 0;
 
 %new
 - (void)wamHandleAvatarTitlePrefsChanged {
+    WAMTrace("CKAvatarTitleCollectionReusableView/wamHandleAvatarTitlePrefsChanged");
     refreshPrefs();
     [self wamApplyTitleColor];
     [self setNeedsLayout];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKAvatarTitleCollectionReusableView/layoutSubviews");
     %orig;
     [self wamApplyTitleColor];
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKAvatarTitleCollectionReusableView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) {
         [[NSNotificationCenter defaultCenter] removeObserver:self name:kPrefsChangedNotification object:nil];
@@ -11021,6 +11366,7 @@ static const char kWAMHeaderLabelOrigKey = 0;
 }
 
 - (void)dealloc {
+    WAMTrace("CKAvatarTitleCollectionReusableView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -11033,6 +11379,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)wamApplyPickerBlur {
+    WAMTrace("CKMessageAcknowledgmentPickerBarView/wamApplyPickerBlur");
     NSMutableArray *blurs = objc_getAssociatedObject(self, &kWAMPickerBlursKey);
     if (!blurs) {
         blurs = [NSMutableArray array];
@@ -11077,6 +11424,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)wamRemovePickerBlur {
+    WAMTrace("CKMessageAcknowledgmentPickerBarView/wamRemovePickerBlur");
     NSMutableArray *blurs = objc_getAssociatedObject(self, &kWAMPickerBlursKey);
     for (UIView *b in blurs) [b removeFromSuperview];
     objc_setAssociatedObject(self, &kWAMPickerBlursKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -11084,6 +11432,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)wamHidePickerTail {
+    WAMTrace("CKMessageAcknowledgmentPickerBarView/wamHidePickerTail");
     CALayer *pill = nil;
     CGFloat maxR = -1;
     for (CALayer *l in self.layer.sublayers) {
@@ -11097,6 +11446,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKMessageAcknowledgmentPickerBarView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -11117,6 +11467,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKMessageAcknowledgmentPickerBarView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
 
@@ -11139,6 +11490,7 @@ static char kWAMPickerBlursKey;
 %hook CKPinnedConversationSummaryBubble
 
 - (void)layoutSubviews {
+    WAMTrace("CKPinnedConversationSummaryBubble/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
     UIView *v = (UIView *)self;
@@ -11155,6 +11507,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
+    WAMTrace("CKPinnedConversationSummaryBubble/touchesBegan:withEvent:");
     %orig;
     if (!isTweakEnabled() || !isPerContactChatBgEnabled()) return;
     NSString *captured = nil;
@@ -11246,6 +11599,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKPinnedConversationSummaryBubble/didMoveToWindow");
     %orig;
     if (isiOS15()) {
         UIView *selfView = (UIView *)self;
@@ -11271,6 +11625,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)handleWAMPinnedPrefsChanged {
+    WAMTrace("CKPinnedConversationSummaryBubble/handleWAMPinnedPrefsChanged");
     refreshPrefs();
     [self updateWAMPinnedColors];
     [CATransaction begin];
@@ -11281,6 +11636,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)updateWAMPinnedColors {
+    WAMTrace("CKPinnedConversationSummaryBubble/updateWAMPinnedColors");
     NSDictionary *prefs = loadPrefs();
     NSString *recvKey = isDarkMode() ? @"receivedBubbleColorDark" : @"receivedBubbleColor";
     NSString *recvTextKey = isDarkMode() ? @"receivedTextColorDark" : @"receivedTextColor";
@@ -11301,6 +11657,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyPinnedBubbleStyle {
+    WAMTrace("CKPinnedConversationSummaryBubble/applyPinnedBubbleStyle");
     UIColor *bubbleColor = isiOS15() ? WAMPinnedBubbleCurrentColor : getPinnedBubbleColor();
     UIColor *textColor = isiOS15() ? WAMPinnedTextCurrentColor : getPinnedBubbleTextColor();
     if (!bubbleColor && !textColor) return;
@@ -11336,6 +11693,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)dealloc {
+    WAMTrace("CKPinnedConversationSummaryBubble/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:(id)self];
     %orig;
 }
@@ -11345,6 +11703,7 @@ static char kWAMPickerBlursKey;
 %hook CNContactView
 
 - (void)didMoveToSuperview {
+    WAMTrace("CNContactView/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled() || !self.superview) return;
 
@@ -11383,6 +11742,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("CNContactView/setBackgroundColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -11397,6 +11757,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CNContactView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -11440,6 +11801,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CNContactView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -11477,6 +11839,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyAdvancedTintToContactLabels {
+    WAMTrace("CNContactView/applyAdvancedTintToContactLabels");
     UIColor *actionColor = nil;
     if (isAdvancedValueExplicitlySet(@"advancedContactActionColor", @"advancedContactActionColorDark") ||
         isAdvancedValueExplicitlySet(@"systemTintColor", @"systemTintColorDark")) {
@@ -11493,6 +11856,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)wamWalkUserViewLabels:(UIView *)view color:(UIColor *)color {
+    WAMTrace("CNContactView/wamWalkUserViewLabels:color:");
     NSString *className = NSStringFromClass([view class]);
     if ([className containsString:@"Keyboard"]) return;
 
@@ -11515,6 +11879,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)walkViewForTintLabels:(UIView *)view color:(UIColor *)color {
+    WAMTrace("CNContactView/walkViewForTintLabels:color:");
     NSString *className = NSStringFromClass([view class]);
     if ([className containsString:@"Keyboard"] ||
         [className containsString:@"UIKBVisualEffectView"]) return;
@@ -11584,6 +11949,7 @@ static char kWAMPickerBlursKey;
 %hook UITableViewWrapperView
 
 - (void)didMoveToSuperview {
+    WAMTrace("UITableViewWrapperView/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled()) return;
     if (!isChatColorBgEnabled() && !isChatImageBgEnabled()) return;
@@ -11603,6 +11969,7 @@ static char kWAMPickerBlursKey;
 
 %hook CNContactHeaderDisplayView
 - (void)setFrame:(CGRect)frame {
+    WAMTrace("CNContactHeaderDisplayView/setFrame:");
     if (isTweakEnabled() && isPerContactChatBgEnabled() && frame.size.height > 213) {
         frame.size.height = 213;
     }
@@ -11610,6 +11977,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CNContactHeaderDisplayView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIColor *titleColor = getChatContactNameColor();
@@ -11620,6 +11988,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CNContactHeaderDisplayView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     self.backgroundColor = [UIColor clearColor];
@@ -11636,6 +12005,7 @@ static char kWAMPickerBlursKey;
 %hook CNContactActionsContainerView
 
 - (void)didMoveToWindow {
+    WAMTrace("CNContactActionsContainerView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     self.backgroundColor = [UIColor clearColor];
@@ -11648,6 +12018,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("CNContactActionsContainerView/setBackgroundColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -11656,6 +12027,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CNContactActionsContainerView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     for (UIView *subview in self.subviews) {
@@ -11670,6 +12042,7 @@ static char kWAMPickerBlursKey;
 
 %hook UITableViewCell
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("UITableViewCell/setBackgroundColor:");
     if (isTweakEnabled() && isiOS15()) {
         NSString *cls = NSStringFromClass([self class]);
         if ([cls hasPrefix:@"CKDetails"]) {
@@ -11681,6 +12054,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("UITableViewCell/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -11711,6 +12085,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)handleContactCellPrefsChanged {
+    WAMTrace("UITableViewCell/handleContactCellPrefsChanged");
     refreshPrefs();
     UIView *parent = self.superview;
     BOOL isInContactView = NO;
@@ -11725,6 +12100,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyContactCellBlur {
+    WAMTrace("UITableViewCell/applyContactCellBlur");
     for (UIView *subview in [self.subviews copy]) {
         if ([subview isKindOfClass:[UIVisualEffectView class]]) [subview removeFromSuperview];
     }
@@ -11757,6 +12133,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("UITableViewCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -11795,6 +12172,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)dealloc {
+    WAMTrace("UITableViewCell/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -11804,6 +12182,7 @@ static char kWAMPickerBlursKey;
 %hook CKMessageAcknowledgmentPickerBarItemViewPhone
 
 - (void)layoutSubviews {
+    WAMTrace("CKMessageAcknowledgmentPickerBarItemViewPhone/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIColor *accentColor = getChatAdvancedTintColorForView(@"advancedReactionHighlightColor", @"advancedReactionHighlightColorDark", getSystemTintColor(), (UIView *)self);
@@ -11829,12 +12208,14 @@ static char kWAMPickerBlursKey;
 %hook CKCanvasBackButtonView
 
 - (void)layoutSubviews {
+    WAMTrace("CKCanvasBackButtonView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyCanvasBackButtonStyle];
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKCanvasBackButtonView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     [self applyCanvasBackButtonStyle];
@@ -11847,6 +12228,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)tintColorDidChange {
+    WAMTrace("CKCanvasBackButtonView/tintColorDidChange");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyCanvasBackButtonStyle];
@@ -11854,11 +12236,13 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)handleCanvasBackButtonPrefsChanged {
+    WAMTrace("CKCanvasBackButtonView/handleCanvasBackButtonPrefsChanged");
     refreshPrefs();
     [self applyCanvasBackButtonStyle];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKCanvasBackButtonView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -11871,6 +12255,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyCanvasBackButtonStyle {
+    WAMTrace("CKCanvasBackButtonView/applyCanvasBackButtonStyle");
     UIColor *bubbleColor = getAdvancedTintColorForView(@"advancedNavButtonColor", @"advancedNavButtonColorDark", getSystemTintColor(), self);
     if (!bubbleColor) return;
 
@@ -11892,6 +12277,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyNavColor:(UIColor *)color textColor:(UIColor *)textColor toView:(UIView *)view {
+    WAMTrace("CKCanvasBackButtonView/applyNavColor:textColor:toView:");
     for (UIView *subview in view.subviews) {
         if ([subview isKindOfClass:[UIVisualEffectView class]]) continue;
         if ([subview isKindOfClass:[UILabel class]]) {
@@ -11908,6 +12294,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)dealloc {
+    WAMTrace("CKCanvasBackButtonView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -11917,12 +12304,14 @@ static char kWAMPickerBlursKey;
 %hook CKPinnedConversationTypingBubble
 
 - (void)didMoveToWindow {
+    WAMTrace("CKPinnedConversationTypingBubble/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled() || !self.window) return;
     [self applyTypingBubbleColors];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKPinnedConversationTypingBubble/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
     [self applyTypingBubbleColors];
@@ -11930,6 +12319,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyTypingBubbleColors {
+    WAMTrace("CKPinnedConversationTypingBubble/applyTypingBubbleColors");
     UIColor *typingColor = getReceivedBubbleColor();
     if (!typingColor) return;
 
@@ -11961,12 +12351,14 @@ static char kWAMPickerBlursKey;
 %hook CKConversationListTypingIndicatorView
 
 - (void)layoutSubviews {
+    WAMTrace("CKConversationListTypingIndicatorView/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled()) return;
     [self applyTypingIndicatorColors];
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKConversationListTypingIndicatorView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isCustomBubbleColorsEnabled() || !self.window) return;
     [self applyTypingIndicatorColors];
@@ -11974,6 +12366,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyTypingIndicatorColors {
+    WAMTrace("CKConversationListTypingIndicatorView/applyTypingIndicatorColors");
     UIColor *typingColor = getReceivedBubbleColor();
     if (!typingColor) return;
 
@@ -12003,18 +12396,21 @@ static char kWAMPickerBlursKey;
 %hook CKTypingView
 
 - (void)layoutSubviews {
+    WAMTrace("CKTypingView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     if (isBlurBubblesEnabled() || isCustomBubbleColorsEnabled()) [self applyTypingIndicatorColors];
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKTypingView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     if (isBlurBubblesEnabled() || isCustomBubbleColorsEnabled()) [self applyTypingIndicatorColors];
 }
 
 - (void)setIndicatorLayer:(CALayer *)layer {
+    WAMTrace("CKTypingView/setIndicatorLayer:");
     %orig;
     if (!isTweakEnabled()) return;
     if (isBlurBubblesEnabled() || isCustomBubbleColorsEnabled())
@@ -12025,6 +12421,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)wamRemoveTypingBlur {
+    WAMTrace("CKTypingView/wamRemoveTypingBlur");
     UIView *blur = objc_getAssociatedObject(self, &kWAMTypingBlurKey);
     if (blur) [blur removeFromSuperview];
     objc_setAssociatedObject(self, &kWAMTypingBlurKey, nil, OBJC_ASSOCIATION_RETAIN_NONATOMIC);
@@ -12032,6 +12429,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)wamApplyTypingBlur:(CALayer *)bubbleContainer tint:(UIColor *)tint {
+    WAMTrace("CKTypingView/wamApplyTypingBlur:tint:");
     CGRect pill = [self.layer convertRect:bubbleContainer.bounds fromLayer:bubbleContainer];
     if (pill.size.width < 5 || pill.size.height < 5) {
         CGRect u = CGRectNull;
@@ -12063,6 +12461,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyTypingIndicatorColors {
+    WAMTrace("CKTypingView/applyTypingIndicatorColors");
     UIColor *typingColor = getReceivedBubbleColor();
 
     CALayer *indicatorLayer = nil;
@@ -12102,6 +12501,7 @@ static char kWAMPickerBlursKey;
 %hook CKNavigationBarCanvasView
 
 - (void) didMoveToWindow {
+    WAMTrace("CKNavigationBarCanvasView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -12128,6 +12528,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void) layoutSubviews {
+    WAMTrace("CKNavigationBarCanvasView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self wamApplyNavCanvasButtonTint:self];
@@ -12135,12 +12536,14 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void) wamHandleNavCanvasPrefsChanged {
+    WAMTrace("CKNavigationBarCanvasView/wamHandleNavCanvasPrefsChanged");
     refreshPrefs();
     [self wamApplyNavCanvasButtonTint:self];
 }
 
 %new
 - (void) wamApplyNavCanvasButtonTint:(UIView *)view {
+    WAMTrace("CKNavigationBarCanvasView/wamApplyNavCanvasButtonTint:");
     static const char kWAMNavImgTintKey = 0;
     UIColor *tint = getAdvancedTintColorForView(@"advancedNavButtonColor", @"advancedNavButtonColorDark", nil, self);
     if (!tint) tint = getSystemTintColor();
@@ -12179,6 +12582,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)dealloc {
+    WAMTrace("CKNavigationBarCanvasView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -12188,12 +12592,14 @@ static char kWAMPickerBlursKey;
 %hook CKPhotosSearchResultsModeHeaderReusableView
 
 - (void) setBackgroundColor {
+    WAMTrace("CKPhotosSearchResultsModeHeaderReusableView/setBackgroundColor");
     %orig;
     self.backgroundColor = [UIColor clearColor];
     return;
 }
 
 - (void) layoutSubviews {
+    WAMTrace("CKPhotosSearchResultsModeHeaderReusableView/layoutSubviews");
     %orig;
     self.backgroundColor = [UIColor clearColor];
     return;
@@ -12204,6 +12610,7 @@ static char kWAMPickerBlursKey;
 %hook CKQuickActionSaveButton
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKQuickActionSaveButton/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -12224,12 +12631,14 @@ static char kWAMPickerBlursKey;
 %hook CKSendMenuPresentationPopoverBackdropView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKSendMenuPresentationPopoverBackdropView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isiOS17OrHigher()) return;
     [self applyMenuBackdropColor];
 }
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("CKSendMenuPresentationPopoverBackdropView/setBackgroundColor:");
     if (!isTweakEnabled() || !isiOS17OrHigher()) {
         %orig;
         return;
@@ -12243,12 +12652,14 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKSendMenuPresentationPopoverBackdropView/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isiOS17OrHigher()) return;
     [self applyMenuBackdropColor];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKSendMenuPresentationPopoverBackdropView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled() || !isiOS17OrHigher()) return;
     if (@available(iOS 13.0, *)) {
@@ -12260,6 +12671,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (UIColor *)adjustedTintColor:(UIColor *)customTint {
+    WAMTrace("CKSendMenuPresentationPopoverBackdropView/adjustedTintColor:");
     CGFloat h, s, b, a;
     if ([customTint getHue:&h saturation:&s brightness:&b alpha:&a]) {
         s = MIN(1.0, s * 1.1);
@@ -12271,6 +12683,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyMenuBackdropColor {
+    WAMTrace("CKSendMenuPresentationPopoverBackdropView/applyMenuBackdropColor");
     UIColor *customTint = getSystemTintColor();
     if (!customTint) return;
 
@@ -12295,12 +12708,14 @@ static char kWAMPickerBlursKey;
 %hook _UINavigationBarLargeTitleView
 
 - (void)layoutSubviews {
+    WAMTrace("_UINavigationBarLargeTitleView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyLargeTitleStyle];
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("_UINavigationBarLargeTitleView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isiOS17OrHigher()) return;
     [self applyLargeTitleStyle];
@@ -12318,17 +12733,20 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)handleLargeTitlePrefsChanged {
+    WAMTrace("_UINavigationBarLargeTitleView/handleLargeTitlePrefsChanged");
     refreshPrefs();
     [self applyLargeTitleStyle];
 }
 
 - (void)dealloc {
+    WAMTrace("_UINavigationBarLargeTitleView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
 
 %new
 - (void)applyLargeTitleStyle {
+    WAMTrace("_UINavigationBarLargeTitleView/applyLargeTitleStyle");
     NSString *conversationListTitle = getConversationListTitle();
     UIColor *titleColor = getConversationListTitleColor();
 
@@ -12354,6 +12772,7 @@ static char kWAMPickerBlursKey;
 %hook UIViewControllerWrapperView
 
 - (void)didMoveToWindow {
+    WAMTrace("UIViewControllerWrapperView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isiOS17OrHigher() || !self.window) return;
 
@@ -12376,6 +12795,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)didMoveToSuperview {
+    WAMTrace("UIViewControllerWrapperView/didMoveToSuperview");
     %orig;
     if (!isTweakEnabled() || !isiOS17OrHigher() || !self.superview) return;
 
@@ -12401,6 +12821,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)layoutSubviews {
+    WAMTrace("UIViewControllerWrapperView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
 
@@ -12464,6 +12885,7 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)applyWrapperBackground {
+    WAMTrace("UIViewControllerWrapperView/applyWrapperBackground");
     UIView *contentView = nil;
     for (UIView *subview in self.subviews) {
         if ([subview isKindOfClass:[UIView class]] && ![subview isKindOfClass:[UIImageView class]]) {
@@ -12516,6 +12938,7 @@ static char kWAMPickerBlursKey;
 %hook CKEntryViewBlurrableButtonContainer
 
 - (void)layoutSubviews {
+    WAMTrace("CKEntryViewBlurrableButtonContainer/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isiOS17OrHigher()) return;
 
@@ -12555,6 +12978,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKEntryViewBlurrableButtonContainer/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isiOS17OrHigher()) return;
 
@@ -12573,12 +12997,14 @@ static char kWAMPickerBlursKey;
 
 %new
 - (void)handleBlurrableButtonPrefsChanged {
+    WAMTrace("CKEntryViewBlurrableButtonContainer/handleBlurrableButtonPrefsChanged");
     refreshPrefs();
     [self setNeedsLayout];
     [self layoutIfNeeded];
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("CKEntryViewBlurrableButtonContainer/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -12591,6 +13017,7 @@ static char kWAMPickerBlursKey;
 }
 
 - (void)dealloc {
+    WAMTrace("CKEntryViewBlurrableButtonContainer/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -12636,6 +13063,7 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook LPFlippedView
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
+    WAMTrace("LPFlippedView/setBackgroundColor:");
     if (!isTweakEnabled()) {
         %orig;
         return;
@@ -12653,6 +13081,7 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)layoutSubviews {
+    WAMTrace("LPFlippedView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     UIView *rlv = wamFindLinkContainer(self);
@@ -12662,6 +13091,7 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("LPFlippedView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled()) return;
     if (isBlurBubblesEnabled()) self.backgroundColor = [UIColor clearColor];
@@ -12691,6 +13121,7 @@ static void wamApplyLinkBlur(UIView *container) {
 
 %new
 - (void)handleLinkPrefsChanged {
+    WAMTrace("LPFlippedView/handleLinkPrefsChanged");
     refreshPrefs();
     if (isBlurBubblesEnabled()) self.backgroundColor = [UIColor clearColor];
     else {
@@ -12702,6 +13133,7 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("LPFlippedView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -12717,6 +13149,7 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)dealloc {
+    WAMTrace("LPFlippedView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
@@ -12726,12 +13159,14 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook LPTextView
 
 - (void)layoutSubviews {
+    WAMTrace("LPTextView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     [self applyLinkTextColors];
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("LPTextView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     [self applyLinkTextColors];
@@ -12745,6 +13180,7 @@ static void wamApplyLinkBlur(UIView *container) {
 
 %new
 - (void)handleLinkTextPrefsChanged {
+    WAMTrace("LPTextView/handleLinkTextPrefsChanged");
     refreshPrefs();
     [self applyLinkTextColors];
     [self setNeedsLayout];
@@ -12752,12 +13188,14 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)dealloc {
+    WAMTrace("LPTextView/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:self];
     %orig;
 }
 
 %new
 - (void)applyLinkTextColors {
+    WAMTrace("LPTextView/applyLinkTextColors");
     UIView *parent = self.superview;
     BOOL isInLinkPreview = NO;
     int levels = 0;
@@ -12788,6 +13226,7 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)traitCollectionDidChange:(UITraitCollection *)previousTraitCollection {
+    WAMTrace("LPTextView/traitCollectionDidChange:");
     %orig;
     if (!isTweakEnabled()) return;
     if (@available(iOS 13.0, *)) {
@@ -12803,6 +13242,7 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook LPImageView
 
 - (void)layoutSubviews {
+    WAMTrace("LPImageView/layoutSubviews");
     %orig;
     if (!isTweakEnabled()) return;
     for (UIView *subview in self.subviews) {
@@ -12811,6 +13251,7 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("LPImageView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !self.window) return;
     for (UIView *subview in self.subviews) {
@@ -12825,12 +13266,14 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook CKMessageEntryWaveformView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKMessageEntryWaveformView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isiOS15() || !self.window) return;
     [self applyWAMAudioStyling];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKMessageEntryWaveformView/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isiOS15()) return;
     [self applyWAMAudioStyling];
@@ -12838,6 +13281,7 @@ static void wamApplyLinkBlur(UIView *container) {
 
 %new
 - (void)applyWAMAudioStyling {
+    WAMTrace("CKMessageEntryWaveformView/applyWAMAudioStyling");
     UIColor *tintColor = getSystemTintColor();
     UIColor *bgColor = isInputFieldCustomizationEnabled() ? getInputFieldBackgroundColor() : nil;
 
@@ -12878,12 +13322,14 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook CKMessageEntryRecordedAudioView
 
 - (void)didMoveToWindow {
+    WAMTrace("CKMessageEntryRecordedAudioView/didMoveToWindow");
     %orig;
     if (!isTweakEnabled() || !isiOS15() || !self.window) return;
     [self applyWAMAudioStyling];
 }
 
 - (void)layoutSubviews {
+    WAMTrace("CKMessageEntryRecordedAudioView/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isiOS15()) return;
     [self applyWAMAudioStyling];
@@ -12891,6 +13337,7 @@ static void wamApplyLinkBlur(UIView *container) {
 
 %new
 - (void)applyWAMAudioStyling {
+    WAMTrace("CKMessageEntryRecordedAudioView/applyWAMAudioStyling");
     UIColor *tintColor = getSystemTintColor();
     UIColor *bgColor = isInputFieldCustomizationEnabled() ? getInputFieldBackgroundColor() : nil;
 
@@ -12934,6 +13381,7 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook CKAvatarNavigationBar
 
 - (void)layoutSubviews {
+    WAMTrace("CKAvatarNavigationBar/layoutSubviews");
     %orig;
     [self applyWAMTitleStyling];
     [self wamApplyChatBgForVisibleTitle];
@@ -12941,6 +13389,7 @@ static void wamApplyLinkBlur(UIView *container) {
 
 %new
 - (void)wamApplyChatBgForVisibleTitle {
+    WAMTrace("CKAvatarNavigationBar/wamApplyChatBgForVisibleTitle");
     return;
     if (!isTweakEnabled() || !isPerContactChatBgEnabled()) return;
     UILabel *best = nil;
@@ -12988,6 +13437,7 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKAvatarNavigationBar/didMoveToWindow");
     %orig;
     UIView *selfView = (UIView *)self;
     if (selfView.window) {
@@ -13005,6 +13455,7 @@ static void wamApplyLinkBlur(UIView *container) {
 
 %new
 - (void)handleWAMTitlePrefsChanged {
+    WAMTrace("CKAvatarNavigationBar/handleWAMTitlePrefsChanged");
     refreshPrefs();
     [(UIView *)self setNeedsLayout];
     [(UIView *)self layoutIfNeeded];
@@ -13012,6 +13463,7 @@ static void wamApplyLinkBlur(UIView *container) {
 
 %new
 - (void)applyWAMTitleStyling {
+    WAMTrace("CKAvatarNavigationBar/applyWAMTitleStyling");
     if (!isTweakEnabled()) return;
 
     NSString *conversationListTitle = getConversationListTitle();
@@ -13060,6 +13512,7 @@ static void wamApplyLinkBlur(UIView *container) {
 }
 
 - (void)dealloc {
+    WAMTrace("CKAvatarNavigationBar/dealloc");
     [[NSNotificationCenter defaultCenter] removeObserver:(id)self];
     %orig;
 }
@@ -13069,12 +13522,14 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook CKConversationListEmbeddedStandardTableViewCell
 
 - (void)layoutSubviews {
+    WAMTrace("CKConversationListEmbeddedStandardTableViewCell/layoutSubviews");
     %orig;
     if (!isTweakEnabled() || !isiOS15()) return;
     applyCustomTextColors((UIView *)self);
 }
 
 - (void)didMoveToWindow {
+    WAMTrace("CKConversationListEmbeddedStandardTableViewCell/didMoveToWindow");
     %orig;
     UIView *selfView = (UIView *)self;
     if (!isTweakEnabled() || !isiOS15() || !selfView.window) return;
@@ -13086,6 +13541,7 @@ static void wamApplyLinkBlur(UIView *container) {
 %hook CKPinnedConversationActivityItemViewBackdropLayer
 
 - (void)setBackgroundColor:(CGColorRef)backgroundColor {
+    WAMTrace("CKPinnedConversationActivityItemViewBackdropLayer/setBackgroundColor:");
     if (!isiOS15() || !WAMPinnedBubbleCurrentColor) {
         %orig;
         return;
@@ -13098,6 +13554,7 @@ static void wamApplyLinkBlur(UIView *container) {
 static void wamKillMessagesCallback(CFNotificationCenterRef center, void *observer,
                                     CFStringRef name, const void *object,
                                     CFDictionaryRef userInfo) {
+    WAMLog(@"life", @"killMessages received -- exiting");
     dispatch_async(dispatch_get_main_queue(), ^{ exit(0); });
 }
 
@@ -13105,6 +13562,8 @@ static void wamKillMessagesCallback(CFNotificationCenterRef center, void *observ
     %ctor
 ============*/
 %ctor {
+    [WAMDebugLog logEnvironment];
+    WAMLog(@"life", @"%%ctor begin (WhatAMess %@)", kWAMTweakVersion);
     reloadPrefs();
 
     CFNotificationCenterAddObserver(

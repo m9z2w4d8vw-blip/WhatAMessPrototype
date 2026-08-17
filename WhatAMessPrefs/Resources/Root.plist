@@ -208,6 +208,48 @@
 			<key>cell</key>
 			<string>PSGroupCell</string>
 			<key>label</key>
+			<string>Debugging</string>
+			<key>footerText</key>
+			<string>Normal traces lifecycle, preference writes, colour decisions and the first call of every hooked method, plus a summary of hook activity every five seconds. Verbose adds per-call detail. Firehose logs every call of all 439 instrumented hooks and will grow fast \u2014 use it briefly. View Log reads or shares the file.</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSSegmentCell</string>
+			<key>key</key>
+			<string>wamDebugLogLevel</string>
+			<key>defaults</key>
+			<string>com.oakstheawesome.whatamessprefs</string>
+			<key>default</key>
+			<integer>1</integer>
+			<key>label</key>
+			<string>Log Level</string>
+			<key>validTitles</key>
+			<array>
+				<string>Off</string>
+				<string>Normal</string>
+				<string>Verbose</string>
+				<string>Firehose</string>
+			</array>
+			<key>validValues</key>
+			<array>
+				<integer>0</integer>
+				<integer>1</integer>
+				<integer>2</integer>
+				<integer>3</integer>
+			</array>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSButtonCell</string>
+			<key>label</key>
+			<string>View Log</string>
+			<key>action</key>
+			<string>viewFilterLog</string>
+		</dict>
+		<dict>
+			<key>cell</key>
+			<string>PSGroupCell</string>
+			<key>label</key>
 			<string> </string>
 		</dict>
 		<dict>
