@@ -4426,12 +4426,18 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
     while (parent && levels < 10) {
         if ([parent isKindOfClass:%c(CKTranscriptStatusCell)]) {
             UIColor *customTint = getAdvancedStatusCellColor();
-            if (customTint) { %orig(customTint); return; }
+            if (customTint) {
+                %orig(customTint);
+                return;
+            }
             break;
         }
         if ([parent isKindOfClass:%c(CKTranscriptLabelCell)]) {
             UIColor *timestampColor = pickTimestampTextColor();
-            if (timestampColor) { %orig(timestampColor); return; }
+            if (timestampColor) {
+                %orig(timestampColor);
+                return;
+            }
             break;
         }
         parent = parent.superview;
@@ -4440,7 +4446,10 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
 
     if ([self.text isEqualToString:@"Edited"] && [self.superview isKindOfClass:%c(_UISystemBackgroundView)]) {
         UIColor *customTint = getAdvancedStatusCellColor();
-        if (customTint) { %orig(customTint); return; }
+        if (customTint) {
+            %orig(customTint);
+            return;
+        }
     }
 
     if ([self.text isEqualToString:@"Edited"]) {
@@ -4449,7 +4458,10 @@ static void wamApplyBackdrop(UIView *v, BOOL wantClear, BOOL opaqueFallback) {
         while (parent2 && levels2 < 7) {
             if ([parent2 isKindOfClass:%c(CKTranscriptStatusCell)]) {
                 UIColor *customTint = getAdvancedStatusCellColor();
-                if (customTint) { %orig(customTint); return; }
+                if (customTint) {
+                    %orig(customTint);
+                    return;
+                }
                 break;
             }
             parent2 = parent2.superview;
@@ -6761,7 +6773,8 @@ static void wamStripOurBlurs(UIView *balloon) {
 
     if (!isCustomBubbleColorsEnabled() && !blurEnabled && !(isInsideReaction && hasReactionBalloonOverride)) {
         [self wamRemoveReceivedBlur];
-        %orig; return;
+        %orig;
+        return;
     }
 
     if ([self isKindOfClass:%c(CKColoredBalloonView)]) {
@@ -7388,7 +7401,10 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
     }
 
     if (isInAudioRecording && isiOS15()) { %orig; return; }
-    if (isInMessageInput && !isInKeyboard) { %orig([UIColor clearColor]); return; }
+    if (isInMessageInput && !isInKeyboard) {
+        %orig([UIColor clearColor]);
+        return;
+    }
     %orig;
 }
 
@@ -7457,7 +7473,10 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
         }
     }
 
-    if (isInMessageInput && !isInKeyboard) { %orig([UIColor clearColor]); return; }
+    if (isInMessageInput && !isInKeyboard) {
+        %orig([UIColor clearColor]);
+        return;
+    }
     %orig;
 }
 
@@ -7490,7 +7509,10 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
         levels++;
     }
 
-    if (isInMessageInput && !isInKeyboard) { %orig([UIColor clearColor]); return; }
+    if (isInMessageInput && !isInKeyboard) {
+        %orig([UIColor clearColor]);
+        return;
+    }
     %orig;
 }
 
@@ -7879,7 +7901,10 @@ static CGImageRef wamTintTemplateImage(CGImageRef src, UIColor *color) {
 - (void)setTextColor:(UIColor *)textColor {
     if (isTweakEnabled() && isInputFieldCustomizationEnabled() && isMessageInputTextEnabled()) {
         UIColor *customTextColor = getMessageInputTextColor();
-        if (customTextColor && isTextViewSafeForColorWrite(self)) { %orig(customTextColor); return; }
+        if (customTextColor && isTextViewSafeForColorWrite(self)) {
+            %orig(customTextColor);
+            return;
+        }
     }
     %orig;
 }
@@ -8719,7 +8744,10 @@ static const char kWAMDrawerOverlayKey = 0;
 }
 
 - (void)setClipsToBounds:(BOOL)clips {
-    if (isTweakEnabled() && isPerContactChatBgEnabled()) { %orig(NO); return; }
+    if (isTweakEnabled() && isPerContactChatBgEnabled()) {
+        %orig(NO);
+        return;
+    }
     %orig(clips);
 }
 
@@ -9492,7 +9520,10 @@ static const char kWAMDrawerOverlayKey = 0;
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
     if (!isTweakEnabled()) { %orig; return; }
-    if (wamHasCustomChatBackdrop()) { %orig([UIColor clearColor]); return; }
+    if (wamHasCustomChatBackdrop()) {
+        %orig([UIColor clearColor]);
+        return;
+    }
     %orig(wamBaseSystemBackground(self));
 }
 
@@ -9583,7 +9614,10 @@ static BOOL wamLabelIsRedish(UIColor *color) {
     if (!(customTint && color && [color isEqual:customTint])) {
         objc_setAssociatedObject(self, &kWAMTableLabelOrigKey, color ?: (id)[NSNull null], OBJC_ASSOCIATION_RETAIN_NONATOMIC);
     }
-    if (customTint) { %orig(customTint); return; }
+    if (customTint) {
+        %orig(customTint);
+        return;
+    }
     %orig;
 }
 
@@ -9722,14 +9756,20 @@ static BOOL wamLabelIsRedish(UIColor *color) {
     if (!isTweakEnabled()) { %orig; return; }
     if ([self.text isEqualToString:@"Report Junk"]) {
         UIColor *customTint = getChatAdvancedTintColorForView(@"advancedReportJunkColor", @"advancedReportJunkColorDark", getSystemTintColor(), self);
-        if (customTint) { %orig(customTint); return; }
+        if (customTint) {
+            %orig(customTint);
+            return;
+        }
     }
     UIView *parent = self.superview;
     int levels = 0;
     while (parent && levels < 10) {
         if ([parent isKindOfClass:%c(CKTranscriptStatusCell)]) {
             UIColor *customTint = getAdvancedStatusCellColor();
-            if (customTint) { %orig(customTint); return; }
+            if (customTint) {
+                %orig(customTint);
+                return;
+            }
             break;
         }
         parent = parent.superview;
@@ -9769,7 +9809,10 @@ static BOOL wamLabelIsRedish(UIColor *color) {
     while (parent && levels < 10) {
         if ([parent isKindOfClass:%c(CKTranscriptStatusCell)]) {
             UIColor *customTint = getAdvancedStatusCellColor();
-            if (customTint) { %orig(customTint); return; }
+            if (customTint) {
+                %orig(customTint);
+                return;
+            }
             break;
         }
         parent = parent.superview;
@@ -10404,7 +10447,10 @@ static const char kWAMReplicantBlankedKey = 0;
         if ([parent isKindOfClass:%c(_UISearchBarSearchContainerView)] ||
             [parent isKindOfClass:%c(UISearchBarBackground)]) {
             UIColor *customTint = getSystemTintColor();
-            if (customTint) { %orig(customTint); return; }
+            if (customTint) {
+                %orig(customTint);
+                return;
+            }
             break;
         }
         parent = parent.superview;
@@ -10412,7 +10458,10 @@ static const char kWAMReplicantBlankedKey = 0;
     }
 
     UIColor *navColor = getAdvancedTintColorForView(@"advancedNavButtonColor", @"advancedNavButtonColorDark", getSystemTintColor(), self);
-    if (navColor) { %orig(navColor); return; }
+    if (navColor) {
+        %orig(navColor);
+        return;
+    }
     %orig;
 }
 
@@ -12465,9 +12514,15 @@ static void wamApplyLinkBlur(UIView *container) {
 
 - (void)setBackgroundColor:(UIColor *)backgroundColor {
     if (!isTweakEnabled()) { %orig; return; }
-    if (isBlurBubblesEnabled()) { %orig([UIColor clearColor]); return; }
+    if (isBlurBubblesEnabled()) {
+        %orig([UIColor clearColor]);
+        return;
+    }
     UIColor *customLinkColor = getLinkPreviewBackgroundColor();
-    if (customLinkColor) { %orig(customLinkColor); return; }
+    if (customLinkColor) {
+        %orig(customLinkColor);
+        return;
+    }
     %orig;
 }
 
